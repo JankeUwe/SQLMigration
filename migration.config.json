@@ -1,0 +1,15 @@
+{
+  "DefaultExchangePath": "\\\\exchange-server\\SQLMigration\\Backups",
+  "DefaultLocalBackupPath": "F:\\Daten\\SQL\\Backup",
+  "DefaultLogPath": "C:\\SQLMigration\\Logs",
+  "LogFilePrefix": "SQL-Migration",
+  "ConnectionTimeout": 30,
+  "CommandTimeout": 0,
+  "BackupCompression": true,
+  "VerifyBackup": true,
+  "CopyOnlyBackup": true,
+  "DefaultMigrationMethod": "BackupRestore",
+  "UncAccessTestTimeoutSec": 10,
+  "StateFileName": "_migration_state.json",
+  "TrustServerCertificate": true
+}

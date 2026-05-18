@@ -1,0 +1,8 @@
+# Archives
+*.zip
+
+# Temporäre Dateien
+*.tmp
+*.bak
+Thumbs.db
+desktop.ini
