@@ -1351,6 +1351,15 @@ $btnMigrate.Add_Click({
                 $migMode = if ($scenario -eq 'Direct') { 'Full' } else { 'Phase1' }
 
                 if ($method -eq 'BackupRestore') {
+                    $fallbackCb = [System.Action[string]]{
+                        param($msg)
+                        Update-StatusBar "Fallback: Backup lokal - Exchange-Pfad fuer Dienstkonto nicht erreichbar" 'Warn'
+                        [System.Windows.Forms.MessageBox]::Show(
+                            $msg,
+                            'Berechtigungs-Fallback aktiv',
+                            [System.Windows.Forms.MessageBoxButtons]::OK,
+                            [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+                    }
                     $res = Invoke-DatabaseMigrationBackupRestore `
                         -SourceServer      $srv `
                         -TargetServer      $srv    # im Phase1-Modus ignoriert `
@@ -1361,7 +1370,8 @@ $btnMigrate.Add_Click({
                         -WithCompression:($cfg.BackupCompression) `
                         -VerifyBackup:($cfg.VerifyBackup) `
                         -WhatIf:$whatif `
-                        -Mode              $migMode
+                        -Mode              $migMode `
+                        -FallbackCallback  $fallbackCb
                     $backupFiles = @($res | Where-Object { $_.BackupFile } |
                                      ForEach-Object { $_.BackupFile })
                 }
@@ -1407,10 +1417,8 @@ $btnMigrate.Add_Click({
                     -LocalBackupPath   $lPath | Out-Null
             }
 
-            # Hinweis auf lokale Backup-Dateien
             Write-MigrationLog -Level 'INFO' -Category 'PHASE1' `
-                -Message "Phase 1 abgeschlossen. Lokale Backup-Dateien verbleiben in: $lPath" `
-                -Detail "Bitte nach erfolgreicher Migration manuell bereinigen."
+                -Message "Phase 1 abgeschlossen."
         }
 
         # ================================================================
@@ -1436,6 +1444,15 @@ $btnMigrate.Add_Click({
                         @($loadedState.BackupFiles)
                     } else { @() }
 
+                    $fallbackCb2 = [System.Action[string]]{
+                        param($msg)
+                        Update-StatusBar "Fallback: Backup lokal kopiert - Exchange-Pfad fuer Dienstkonto nicht erreichbar" 'Warn'
+                        [System.Windows.Forms.MessageBox]::Show(
+                            $msg,
+                            'Berechtigungs-Fallback aktiv',
+                            [System.Windows.Forms.MessageBoxButtons]::OK,
+                            [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+                    }
                     $res = Invoke-DatabaseMigrationBackupRestore `
                         -SourceServer    $srv `   # nicht genutzt in Phase2
                         -TargetServer    $srv `
@@ -1443,7 +1460,8 @@ $btnMigrate.Add_Click({
                         -ExchangePath    $exPath `
                         -LocalBackupPath $lPath `
                         -WhatIf:$whatif `
-                        -Mode            'Phase2'
+                        -Mode            'Phase2' `
+                        -FallbackCallback $fallbackCb2
                 }
                 elseif ($method -eq 'DetachAttach') {
                     $res = Invoke-DatabaseMigrationDetachAttach `

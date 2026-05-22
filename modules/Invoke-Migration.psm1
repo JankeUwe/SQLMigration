@@ -44,7 +44,9 @@ function Invoke-DatabaseMigrationBackupRestore {
         # Im TwoPhase-Modus: nur Backup+Copy (Phase 1) oder nur Restore (Phase 2)
         [ValidateSet('Full','Phase1','Phase2')]
         [string]$Mode = 'Full',
-        [System.Action[string]]$ProgressCallback
+        [System.Action[string]]$ProgressCallback,
+        # Callback wenn Fallback auf lokales Backup greift (GUI-Hinweis)
+        [System.Action[string]]$FallbackCallback
     )
 
     $results = [System.Collections.Generic.List[PSObject]]::new()
@@ -107,9 +109,16 @@ function Invoke-DatabaseMigrationBackupRestore {
 
                     # --- Versuch 2: lokal + Copy ---
                     if (-not $backupOK) {
-                        Write-MigrationLog -Level 'INFO' -Category 'BACKUP' `
-                            -Message "Versuch 2: Backup lokal, dann Copy" `
+                        Write-MigrationLog -Level 'WARN' -Category 'BACKUP' `
+                            -Message "Fallback: Backup lokal, dann Copy (Dienstkonto hat keinen UNC-Zugriff)" `
                             -Detail $LocalBackupPath
+
+                        # GUI-Hinweis ausloesen
+                        if ($FallbackCallback) {
+                            $FallbackCallback.Invoke(
+                                "HINWEIS: Dienstkonto hat keinen Zugriff auf Exchange-Pfad.`n" +
+                                "Backup wird lokal erstellt ($LocalBackupPath)`nund danach unter Admin-Credentials kopiert.")
+                        }
 
                         Ensure-LocalBackupPath -Path $LocalBackupPath
 
@@ -139,10 +148,17 @@ function Invoke-DatabaseMigrationBackupRestore {
                         Write-MigrationLog -Level 'SUCCESS' -Category 'COPY' `
                             -Message "Backup kopiert nach Exchange-Pfad" -Detail $destFile
 
-                        # Hinweis: lokale Datei bewusst behalten
-                        Write-MigrationLog -Level 'INFO' -Category 'COPY' `
-                            -Message "Lokale Backup-Datei verbleibt (manuell loeschen)" `
-                            -Detail $localFile
+                        # Lokale Datei nach erfolgreichem Copy aufraumen
+                        try {
+                            Remove-Item -Path $localFile -Force -ErrorAction Stop
+                            Write-MigrationLog -Level 'INFO' -Category 'CLEANUP' `
+                                -Message "Lokale Backup-Datei bereinigt" -Detail $localFile
+                        }
+                        catch {
+                            Write-MigrationLog -Level 'WARN' -Category 'CLEANUP' `
+                                -Message "Lokale Backup-Datei konnte nicht geloescht werden (manuell pruefen)" `
+                                -Detail $localFile
+                        }
                     }
 
                     if ($VerifyBackup) {
@@ -206,13 +222,20 @@ function Invoke-DatabaseMigrationBackupRestore {
 
                     # --- Versuch 2: Copy lokal + Restore lokal ---
                     if (-not $restoreOK) {
-                        Write-MigrationLog -Level 'INFO' -Category 'RESTORE' `
-                            -Message "Versuch 2: Backup lokal kopieren, dann Restore" `
+                        Write-MigrationLog -Level 'WARN' -Category 'RESTORE' `
+                            -Message "Fallback: Backup lokal kopieren, dann Restore (Dienstkonto hat keinen UNC-Zugriff)" `
                             -Detail $LocalBackupPath
+
+                        # GUI-Hinweis ausloesen
+                        if ($FallbackCallback) {
+                            $FallbackCallback.Invoke(
+                                "HINWEIS: Dienstkonto hat keinen Zugriff auf Exchange-Pfad.`n" +
+                                "Backup-Datei wird lokal kopiert ($LocalBackupPath)`nund danach der Restore ausgefuehrt.")
+                        }
 
                         Ensure-LocalBackupPath -Path $LocalBackupPath
 
-                        $srcFile   = if ($stepResult.BackupFile) {
+                        $srcFile = if ($stepResult.BackupFile) {
                             $stepResult.BackupFile
                         } else {
                             # Suche passende .bak im Exchange-Pfad
@@ -234,13 +257,22 @@ function Invoke-DatabaseMigrationBackupRestore {
                             -WithReplace  `
                             -ErrorAction  Stop
 
-                        $stepResult.RestoreOK    = $true
+                        $stepResult.RestoreOK       = $true
                         $stepResult.UsedLocalBackup = $true
                         Write-MigrationLog -Level 'SUCCESS' -Category 'RESTORE' `
                             -Message "Restore lokal OK: $dbName"
-                        Write-MigrationLog -Level 'INFO' -Category 'RESTORE' `
-                            -Message "Lokale Restore-Kopie verbleibt (manuell loeschen)" `
-                            -Detail $localDest
+
+                        # Lokale Kopie nach erfolgreichem Restore aufraumen
+                        try {
+                            Remove-Item -Path $localDest -Force -ErrorAction Stop
+                            Write-MigrationLog -Level 'INFO' -Category 'CLEANUP' `
+                                -Message "Lokale Restore-Kopie bereinigt" -Detail $localDest
+                        }
+                        catch {
+                            Write-MigrationLog -Level 'WARN' -Category 'CLEANUP' `
+                                -Message "Lokale Restore-Kopie konnte nicht geloescht werden (manuell pruefen)" `
+                                -Detail $localDest
+                        }
                     }
 
                 } else {
