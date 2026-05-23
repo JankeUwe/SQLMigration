@@ -6,7 +6,7 @@ PowerShell WinForms-Tool zur zweiphasigen SQL Server Datenbankmigrationen — en
 
 `SQLMigration` ist eine grafische PowerShell-Anwendung (WinForms) für SQL Server Migrationen in komplexen Netzwerkumgebungen. Das Tool unterstützt direkte Migrationen (Quell- und Zielserver erreichbar) sowie zweiphasige Migrationen über eine Zustandsdatei — für Umgebungen ohne direkte Netzwerkverbindung zwischen den Servern.
 
-**Version:** 1.1 | **Getestet auf:** Windows Server 2022 / SQL Server 2022
+**Version:** 1.1 | **Getestet auf:** Windows Server 2022 / SQL Server 2016–2022
 
 ## Features
 
@@ -24,12 +24,12 @@ PowerShell WinForms-Tool zur zweiphasigen SQL Server Datenbankmigrationen — en
 
 ## Voraussetzungen
 
-| Anforderung | Mindestversion |
-|-------------|---------------|
-| Windows Server | 2022 |
-| SQL Server | 2022 |
-| PowerShell | 5.1 |
-| dbaTools | 2.0 |
+| Anforderung | Mindestversion | Hinweis |
+|-------------|---------------|---------|
+| Windows Server | 2016 | Quell- und Zielserver |
+| SQL Server | 2016 | Quelle: ab 2016 — Ziel: 2016 bis 2025 |
+| PowerShell | 5.1 | |
+| dbaTools | 2.0 | |
 
 ## Verwendung
 
@@ -78,6 +78,8 @@ Die `migration.config.json` steuert:
 
 ## Mehr Informationen
 
-- Artikel: [SQL Server Migration Automation](https://www.powershelldba.de/tools/sql-migrations-automation)
-- Website: [www.powershelldba.de](https://www.powershelldba.de)
-- Entwickler: Uwe Janke, Senior IT-Spezialist / SQL Server DBA
+- **Dokumentation:** [powershelldba.de/tools/sql-migrations-automation](https://www.powershelldba.de/tools/sql-migrations-automation)
+- **Website:** [www.powershelldba.de](https://www.powershelldba.de)
+- **PowerShell Gallery:** [powershellgallery.com/profiles/JankeUwe](https://www.powershellgallery.com/profiles/JankeUwe)
+- **Alle Projekte:** [github.com/JankeUwe](https://github.com/JankeUwe)
+- Entwickler: Uwe Janke, Senior SQL Server DBA | dtcSoftware
