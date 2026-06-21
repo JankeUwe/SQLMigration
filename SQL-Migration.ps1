@@ -47,7 +47,7 @@ $modulePath = Join-Path $PSScriptRoot 'modules'
 ) | ForEach-Object {
     $mp = Join-Path $modulePath "$_.psm1"
     if (Test-Path $mp) {
-        Import-Module $mp -Force -ErrorAction Stop
+        Import-Module $mp -Force -DisableNameChecking -ErrorAction Stop
     } else {
         throw "Modul nicht gefunden: $mp"
     }
@@ -792,12 +792,19 @@ $tabs.Add_DrawItem({
 })
 # Tab-Reiter auf die volle Breite ziehen, damit kein heller (themed) Reststreifen
 # rechts neben den Tabs sichtbar bleibt. Bei Groessenaenderung neu berechnen.
+$script:_fitTabsBusy = $false
 $script:FitTabWidth = {
-    if ($tabs.TabCount -gt 0) {
-        $w = [int](($tabs.ClientSize.Width - 6) / $tabs.TabCount)
-        if ($w -lt 70) { $w = 70 }
-        try { $tabs.ItemSize = New-Object System.Drawing.Size($w, 26) } catch { }
-    }
+    # ACHTUNG: Das Setzen von ItemSize loest selbst SizeChanged aus.
+    # Ohne Schutz entsteht eine Endlosrekursion (Haenger beim Layout).
+    if ($script:_fitTabsBusy) { return }
+    if ($tabs.TabCount -le 0) { return }
+    $w = [int](($tabs.ClientSize.Width - 6) / $tabs.TabCount)
+    if ($w -lt 70) { $w = 70 }
+    if ($tabs.ItemSize.Width -eq $w) { return }   # bereits korrekt -> nichts tun
+    $script:_fitTabsBusy = $true
+    try   { $tabs.ItemSize = New-Object System.Drawing.Size($w, 26) }
+    catch { }
+    finally { $script:_fitTabsBusy = $false }
 }
 $tabs.Add_SizeChanged({ & $script:FitTabWidth })
 $pnlMain.Controls.Add($tabs)
