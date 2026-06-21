@@ -21,7 +21,9 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 **Szenarien / Verfahren:**
 
 - **Direkt** – Gegenstelle (anderer Server) ist erreichbar → **ein Durchlauf** vom Quellserver aus:
-  DB via Backup→robocopy→Restore, Logins/Jobs/LS/Cred/Proxy direkt via `Copy-Dba*`.
+  DB wird lokal auf der Quelle gesichert und per **robocopy in die Admin-Freigabe des Ziels**
+  (`\\ziel\D$\…\Backup`) kopiert; der Restore am Ziel nutzt dessen **lokalen** Pfad. Logins/Jobs/LS/
+  Cred/Proxy direkt via `Copy-Dba*`. Das Tool läuft dabei **auf dem Quellserver**.
 - **Umweg (TwoPhase)** – Quelle und Ziel getrennt (z. B. verschiedene Domänen): erst Phase 1 auf der
   Quelle (Backup + **Skript-Export** aller Objekte auf den Exchange-Pfad), dann Phase 2 auf dem Ziel
   (Restore + **Skript-Import**). Alle Objekttypen werden hier per Skript übertragen.

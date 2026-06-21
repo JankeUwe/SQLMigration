@@ -52,6 +52,25 @@ function Get-ServerBackupDirectory {
 }
 
 # ---------------------------------------------------------------------------
+# Lokalen Pfad eines Remote-Servers in eine Admin-Freigabe-UNC umwandeln.
+# z.B. ('SERVER','D:\MSSQL\Backup') -> '\\SERVER\D$\MSSQL\Backup'
+# Bereits-UNC oder Nicht-Laufwerkspfade werden unveraendert zurueckgegeben.
+# ---------------------------------------------------------------------------
+function ConvertTo-AdminShareUnc {
+    param(
+        [Parameter(Mandatory)][string]$ComputerName,
+        [Parameter(Mandatory)][string]$LocalPath
+    )
+    $hostName = ($ComputerName -split '\\')[0].Split(',')[0].Trim()
+    if ($LocalPath -match '^[A-Za-z]:\\') {
+        $drive = $LocalPath.Substring(0, 1)
+        $rest  = $LocalPath.Substring(2).TrimStart('\')
+        return "\\$hostName\$drive`$\$rest"
+    }
+    return $LocalPath
+}
+
+# ---------------------------------------------------------------------------
 # Backup-Verzeichnis des Zielservers als Admin-Freigabe-UNC ermitteln.
 # z.B. lokal 'D:\MSSQL\Backup' -> '\\SERVER\D$\MSSQL\Backup'
 # ---------------------------------------------------------------------------
@@ -65,16 +84,9 @@ function Get-TargetBackupUncPath {
         $conn = Connect-DbaInstance -SqlInstance $ServerInstance -TrustServerCertificate:$TrustServerCertificate -ErrorAction Stop
         $bdir = (Get-DbaDefaultPath -SqlInstance $conn).Backup
         if (-not $bdir) { return $null }
-        $hostName = ($ServerInstance -split '\\')[0].Split(',')[0].Trim()
-        if ($bdir -match '^[A-Za-z]:\\') {
-            $drive = $bdir.Substring(0, 1)
-            $rest  = $bdir.Substring(2).TrimStart('\')
-            $unc   = "\\$hostName\$drive`$\$rest"
-            Write-MigrationLog -Level 'INFO' -Category 'PATH' -Message "Ziel-Backup-Pfad ermittelt" -Detail $unc
-            return $unc
-        }
-        # Bereits UNC oder Sonderfall -> unveraendert zurueck
-        return $bdir
+        $unc = ConvertTo-AdminShareUnc -ComputerName $ServerInstance -LocalPath $bdir
+        Write-MigrationLog -Level 'INFO' -Category 'PATH' -Message "Ziel-Backup-Pfad ermittelt" -Detail $unc
+        return $unc
     }
     catch {
         Write-MigrationLog -Level 'WARN' -Category 'PATH' `
@@ -1057,9 +1069,92 @@ function Export-MigrationCredentials {
 }
 
 # ---------------------------------------------------------------------------
+# DIREKT-DB-TRANSFER (laeuft auf der Quelle, Ziel ueber Admin-Freigabe-UNC)
+# Quelle = lokale Maschine (Backup/Detach lokal). Ziel = remote: Dateien per
+# robocopy in die Admin-Freigabe (\\ziel\D$\...) kopieren, Restore/Attach dann
+# mit den LOKALEN Pfaden des Ziels (so wie der Ziel-SQL-Dienst sie sieht).
+# ---------------------------------------------------------------------------
+function Invoke-DirectDatabaseTransfer {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$SourceServer,
+        [Parameter(Mandatory)]$TargetServer,
+        [Parameter(Mandatory)][string[]]$Databases,
+        [string]$LocalBackupPath = 'F:\Daten\SQL\Backup',
+        [string]$Method          = 'BackupRestore',
+        [switch]$CopyOnly,
+        [switch]$WithCompression,
+        [switch]$WhatIf
+    )
+    $tgtHost = ($TargetServer.Name -split '\\')[0].Split(',')[0].Trim()
+
+    foreach ($dbName in $Databases) {
+        try {
+            if ($Method -eq 'DetachAttach') {
+                # --- Detach/Attach direkt ---
+                $db       = Get-DbaDatabase -SqlInstance $SourceServer -Database $dbName -ErrorAction Stop
+                $dataF    = @($db.FileGroups | ForEach-Object { $_.Files } | Select-Object -ExpandProperty FileName)
+                $logF     = @($db.LogFiles | Select-Object -ExpandProperty FileName)
+                $dp       = Get-DbaDefaultPath -SqlInstance $TargetServer -ErrorAction Stop
+                $tgtDataL = $dp.Data
+                $tgtLogL  = if ($dp.Log) { $dp.Log } else { $dp.Data }
+                $tgtDataU = ConvertTo-AdminShareUnc -ComputerName $tgtHost -LocalPath $tgtDataL
+                $tgtLogU  = ConvertTo-AdminShareUnc -ComputerName $tgtHost -LocalPath $tgtLogL
+
+                if ($WhatIf) {
+                    Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "[WHATIF] Detach/Attach direkt: $dbName"
+                    continue
+                }
+                Detach-DbaDatabase -SqlInstance $SourceServer -Database $dbName -Force -ErrorAction Stop | Out-Null
+                $tgtLocalFiles = [System.Collections.Generic.List[string]]::new()
+                foreach ($f in @($dataF + $logF)) {
+                    $isLog    = $f -match '\.ldf$'
+                    $destUnc  = if ($isLog) { $tgtLogU } else { $tgtDataU }
+                    $destLoc  = if ($isLog) { $tgtLogL } else { $tgtDataL }
+                    $null     = Copy-FileRobocopy -SourceFile $f -DestDir $destUnc
+                    $tgtLocalFiles.Add((Join-Path $destLoc (Split-Path $f -Leaf)))
+                }
+                $attach = Build-AttachQuery -DbName $dbName -Files $tgtLocalFiles.ToArray()
+                Invoke-DbaQuery -SqlInstance $TargetServer -Query $attach -ErrorAction Stop
+                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Attach (direkt) OK: $dbName"
+            }
+            else {
+                # --- Backup/Restore direkt ---
+                $srcDir   = Get-ServerBackupDirectory -Server $SourceServer -Fallback $LocalBackupPath
+                $tgtLocal = Get-ServerBackupDirectory -Server $TargetServer -Fallback $LocalBackupPath
+                $tgtUnc   = ConvertTo-AdminShareUnc -ComputerName $tgtHost -LocalPath $tgtLocal
+
+                if ($WhatIf) {
+                    Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "[WHATIF] Backup/Restore direkt: $dbName ($srcDir -> $tgtUnc)"
+                    continue
+                }
+                Ensure-LocalBackupPath -Path $srcDir
+                $bp = Backup-DbaDatabase -SqlInstance $SourceServer -Database $dbName `
+                    -BackupDirectory $srcDir -CompressBackup $WithCompression.IsPresent -CopyOnly $CopyOnly.IsPresent -ErrorAction Stop
+                $srcFile = $bp.BackupPath
+                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Backup (Quelle, lokal) OK: $dbName" -Detail $srcFile
+
+                # robocopy Quelle-lokal -> Ziel-Admin-Freigabe
+                $null = Copy-FileRobocopy -SourceFile $srcFile -DestDir $tgtUnc
+                $tgtLocalFile = Join-Path $tgtLocal (Split-Path $srcFile -Leaf)
+                Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "Backup ans Ziel kopiert" -Detail $tgtLocalFile
+
+                # Restore am Ziel aus dessen LOKALEM Pfad
+                $null = Restore-DbaDatabase -SqlInstance $TargetServer -Path $tgtLocalFile `
+                    -DatabaseName $dbName -WithReplace -ErrorAction Stop
+                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Restore (Ziel) OK: $dbName"
+            }
+        }
+        catch {
+            Write-MigrationLog -Level 'ERROR' -Category 'DIRECT-DB' -Message "Fehler bei $dbName (direkt)" -Detail $_.Exception.Message
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # DIREKT-MIGRATION (ein Durchlauf, beide Server sichtbar)
-# Wiederverwendet die vorhandenen Funktionen: DB via Backup/Restore (lokal +
-# robocopy, Mode Full), Objekte direkt via Copy-Dba* (Quelle+Ziel gleichzeitig).
+# DB ueber Invoke-DirectDatabaseTransfer (Ziel via Admin-Freigabe), Objekte
+# direkt via Copy-Dba* (Quelle+Ziel gleichzeitig sichtbar).
 # ---------------------------------------------------------------------------
 function Invoke-DirectMigration {
     [CmdletBinding()]
@@ -1076,15 +1171,10 @@ function Invoke-DirectMigration {
     )
     Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direkt-Migration gestartet (ein Durchlauf)"
 
-    # 1. Datenbanken (Full: Backup Quelle -> robocopy -> Restore Ziel)
+    # 1. Datenbanken: Quelle lokal sichern/detachen, Ziel ueber Admin-Freigabe-UNC
     if ($Objects['Datenbanken'] -and $Databases.Count -gt 0) {
-        if ($Method -eq 'DetachAttach') {
-            $null = Invoke-DatabaseMigrationDetachAttach -SourceServer $SourceServer -TargetServer $TargetServer `
-                -Databases $Databases -ExchangePath $ExchangePath -Mode 'Full' -WhatIf:$WhatIf
-        } else {
-            $null = Invoke-DatabaseMigrationBackupRestore -SourceServer $SourceServer -TargetServer $TargetServer `
-                -Databases $Databases -ExchangePath $ExchangePath -LocalBackupPath $LocalBackupPath -Mode 'Full' -WhatIf:$WhatIf
-        }
+        Invoke-DirectDatabaseTransfer -SourceServer $SourceServer -TargetServer $TargetServer `
+            -Databases $Databases -LocalBackupPath $LocalBackupPath -Method $Method -WhatIf:$WhatIf
         Invoke-PostRestoreCleanup -TargetServer $TargetServer -Databases $Databases -WhatIf:$WhatIf
     }
 
