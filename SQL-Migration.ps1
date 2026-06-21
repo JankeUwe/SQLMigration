@@ -790,6 +790,16 @@ $tabs.Add_DrawItem({
     $e.Graphics.DrawString($page.Text, $tc.Font, $tb, ([System.Drawing.RectangleF]$rect), $sf)
     $brush.Dispose(); $tb.Dispose(); $sf.Dispose()
 })
+# Tab-Reiter auf die volle Breite ziehen, damit kein heller (themed) Reststreifen
+# rechts neben den Tabs sichtbar bleibt. Bei Groessenaenderung neu berechnen.
+$script:FitTabWidth = {
+    if ($tabs.TabCount -gt 0) {
+        $w = [int](($tabs.ClientSize.Width - 6) / $tabs.TabCount)
+        if ($w -lt 70) { $w = 70 }
+        try { $tabs.ItemSize = New-Object System.Drawing.Size($w, 26) } catch { }
+    }
+}
+$tabs.Add_SizeChanged({ & $script:FitTabWidth })
 $pnlMain.Controls.Add($tabs)
 
 # WinForms Dock-Reihenfolge: Fill muss Index 0 sein.
@@ -890,6 +900,10 @@ function New-ObjectTab {
     })
 
     $tp.Controls.Add($lv)
+    # Dock-Reihenfolge: Fill (ListView) muss Index 0 sein, sonst ueberdeckt das
+    # obere Button-Panel die Spaltenkoepfe der ListView.
+    $tp.Controls.SetChildIndex($lv, 0)
+    $tp.Controls.SetChildIndex($pnlBtn, 1)
     $tabs.TabPages.Add($tp)
     return $lv
 }
@@ -915,6 +929,9 @@ $lvProx   = New-ObjectTab 'Proxies' @(
 
 # Liste aller ListViews fuer globale Alle/Keine Buttons
 $script:_AllListViews = @($lvDbs,$lvLogins,$lvUsers,$lvLS,$lvJobs,$lvCreds,$lvProx)
+
+# Tab-Breiten initial auf volle Breite ziehen (nach dem Anlegen aller Tabs)
+& $script:FitTabWidth
 
 # ===========================================================================
 # VERBINDEN-LOGIK
@@ -1563,5 +1580,7 @@ $btnMigrate.Add_Click({
 # ===========================================================================
 Write-MigrationLog -Level 'INFO' -Category 'GUI' `
     -Message "GUI gestartet" -Detail "Rolle: $($script:ActiveRole)"
+# Tab-Breiten an die finale Fenstergroesse anpassen, sobald das Formular sichtbar ist
+$form.Add_Shown({ & $script:FitTabWidth })
 [System.Windows.Forms.Application]::Run($form)
 Write-MigrationLog -Level 'INFO' -Category 'GUI' -Message 'GUI beendet'
