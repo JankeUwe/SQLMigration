@@ -1459,6 +1459,13 @@ $btnMigrate.Add_Click({
                 } catch { }
             }
 
+            # Objekt-Skripte fuer den Umweg exportieren (Jobs/LS/Cred/Proxy)
+            $objectScripts = @{}
+            if ($chks['Credentials'])   { try { $x = Export-MigrationCredentials  -SourceServer $srv -ExchangePath $exPath -WhatIf:$whatif; if ($x) { $objectScripts['Credentials']   = $x } } catch { } }
+            if ($chks['Proxies'])       { try { $x = Export-MigrationProxies       -SourceServer $srv -ExchangePath $exPath -WhatIf:$whatif; if ($x) { $objectScripts['Proxies']       = $x } } catch { } }
+            if ($chks['Linked Server']) { try { $x = Export-MigrationLinkedServers -SourceServer $srv -ExchangePath $exPath -WhatIf:$whatif; if ($x) { $objectScripts['LinkedServers'] = $x } } catch { } }
+            if ($chks['Agent Jobs'])    { try { $x = Export-MigrationAgentJobs     -SourceServer $srv -ExchangePath $exPath -WhatIf:$whatif; if ($x) { $objectScripts['Jobs']          = $x } } catch { } }
+
             # Zustandsdatei schreiben (auch im Direct-Modus als Protokoll)
             if (-not $whatif) {
                 $tgtSrv = if ($loadedState) { $loadedState.TargetServer } else { '' }
@@ -1476,7 +1483,8 @@ $btnMigrate.Add_Click({
                     -WhatIf            $whatif `
                     -LocalBackupPath   $lPath `
                     -SqlLoginsPresent  $sqlLoginsPresent `
-                    -LoginScriptFile   $loginScriptFile | Out-Null
+                    -LoginScriptFile   $loginScriptFile `
+                    -ObjectScripts     $objectScripts | Out-Null
             }
 
             Write-MigrationLog -Level 'INFO' -Category 'PHASE1' `
@@ -1579,14 +1587,17 @@ $btnMigrate.Add_Click({
                 Remove-DeadAdLogin -TargetServer $srv -WhatIf:$whatif
             }
 
-            # Logins werden in Phase 2 ueber das Skript migriert (siehe oben).
-            # Agent Jobs / Linked Server / Credentials / Proxies brauchen weiterhin
-            # die gleichzeitige Verbindung zu beiden Servern (Copy-Dba*) -> nur Direct.
-            if ($chks['Agent Jobs'] -or $chks['Linked Server'] -or
-                $chks['Credentials'] -or $chks['Proxies']) {
-                Write-MigrationLog -Level 'WARN' -Category 'PHASE2' `
-                    -Message "Job/LS/Cred/Proxy-Migration erfordert gleichzeitige Verbindung zu Quell- und Zielserver" `
-                    -Detail "Diese Objekte koennen nur im Direct-Modus (beide Server sichtbar) migriert werden."
+            # Objekte aus Skripten anlegen (Umweg). Reihenfolge wegen Abhaengigkeiten:
+            # Credentials -> Proxies -> Linked Server -> Agent Jobs.
+            $objScripts = $null
+            if ($loadedState -and ($null -ne $loadedState.PSObject.Properties['ObjectScripts'])) {
+                $objScripts = $loadedState.ObjectScripts
+            }
+            if ($objScripts) {
+                if ($chks['Credentials']   -and $objScripts.Credentials)   { Import-MigrationScriptFile -TargetServer $srv -ScriptFile $objScripts.Credentials   -Category 'CRED-IMPORT'  -WhatIf:$whatif }
+                if ($chks['Proxies']       -and $objScripts.Proxies)       { Import-MigrationScriptFile -TargetServer $srv -ScriptFile $objScripts.Proxies       -Category 'PROXY-IMPORT' -WhatIf:$whatif }
+                if ($chks['Linked Server'] -and $objScripts.LinkedServers) { Import-MigrationScriptFile -TargetServer $srv -ScriptFile $objScripts.LinkedServers -Category 'LS-IMPORT'    -WhatIf:$whatif }
+                if ($chks['Agent Jobs']    -and $objScripts.Jobs)          { Import-MigrationScriptFile -TargetServer $srv -ScriptFile $objScripts.Jobs          -Category 'JOB-IMPORT'   -WhatIf:$whatif }
             }
 
             # Phase2 in Zustandsdatei vermerken

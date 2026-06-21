@@ -888,6 +888,142 @@ function Import-MigrationLogins {
         -Message "Login-Import abgeschlossen" -Detail "OK: $ok | Fehler/uebersprungen: $fail"
 }
 
+# ---------------------------------------------------------------------------
+# Generischer Skript-Import (Jobs/LinkedServer/Credentials/Proxies)
+# Batchweise an GO getrennt; einzelne Batches duerfen scheitern.
+# ---------------------------------------------------------------------------
+function Import-MigrationScriptFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$TargetServer,
+        [Parameter(Mandatory)][string]$ScriptFile,
+        [string]$Category = 'SCRIPT-IMPORT',
+        [switch]$WhatIf
+    )
+    if ([string]::IsNullOrWhiteSpace($ScriptFile) -or -not (Test-Path $ScriptFile)) {
+        Write-MigrationLog -Level 'WARN' -Category $Category -Message "Skript nicht gefunden - uebersprungen" -Detail $ScriptFile
+        return
+    }
+    Write-MigrationLog -Level 'STEP' -Category $Category -Message "Importiere Skript" -Detail $ScriptFile
+    $sqlText = Get-Content -Path $ScriptFile -Raw -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrWhiteSpace($sqlText)) {
+        Write-MigrationLog -Level 'INFO' -Category $Category -Message "Skript ist leer - nichts zu importieren"
+        return
+    }
+    $batches = [regex]::Split($sqlText, '(?im)^\s*GO\s*$') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $ok = 0; $fail = 0
+    foreach ($batch in $batches) {
+        if ($WhatIf) {
+            Write-MigrationLog -Level 'INFO' -Category $Category -Message "[WHATIF] Batch wuerde ausgefuehrt" -Detail (($batch.Trim() -split "`n")[0])
+            continue
+        }
+        try {
+            Invoke-DbaQuery -SqlInstance $TargetServer -Query $batch -EnableException -ErrorAction Stop
+            $ok++
+        }
+        catch {
+            $fail++
+            Write-MigrationLog -Level 'WARN' -Category $Category -Message "Batch fehlgeschlagen (uebersprungen)" -Detail $_.Exception.Message
+        }
+    }
+    Write-MigrationLog -Level 'SUCCESS' -Category $Category -Message "Skript-Import abgeschlossen" -Detail "OK: $ok | Fehler/uebersprungen: $fail"
+}
+
+# ---------------------------------------------------------------------------
+# Secrets-Report: Objekte deren Geheimnisse ggf. nachzutragen sind
+# ---------------------------------------------------------------------------
+function Write-SecretsTodo {
+    param([string]$ExchangePath, [string]$ObjectType, [string[]]$Names)
+    if (-not $Names -or $Names.Count -eq 0) { return }
+    try {
+        $f = Join-Path $ExchangePath 'migration_secrets_TODO.txt'
+        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        $lines = $Names | ForEach-Object { "$stamp  [$ObjectType] $_  -> Passwort/Secret am Ziel pruefen/nachtragen" }
+        $lines | Out-File -FilePath $f -Append -Encoding UTF8
+        Write-MigrationLog -Level 'WARN' -Category 'SECRETS' `
+            -Message "$ObjectType : Geheimnisse ggf. manuell nachtragen ($($Names.Count)) - siehe migration_secrets_TODO.txt"
+    } catch { }
+}
+
+# ---------------------------------------------------------------------------
+# Objekt-Export (Phase 1, Quelle) -> Skript auf Exchange-Pfad
+# ---------------------------------------------------------------------------
+function Export-MigrationAgentJobs {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$SourceServer,[Parameter(Mandatory)][string]$ExchangePath,[switch]$WhatIf)
+    $f = Join-Path $ExchangePath 'migration_jobs.sql'
+    Write-MigrationLog -Level 'STEP' -Category 'JOB-EXPORT' -Message "Exportiere Agent Jobs als Skript" -Detail $f
+    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'JOB-EXPORT' -Message "[WHATIF] Job-Skript wuerde erzeugt"; return $f }
+    try {
+        $jobs = Get-DbaAgentJob -SqlInstance $SourceServer -ErrorAction Stop
+        if (-not $jobs) { Write-MigrationLog -Level 'INFO' -Category 'JOB-EXPORT' -Message "Keine Agent Jobs vorhanden"; return $null }
+        $null = $jobs | Export-DbaScript -FilePath $f -ErrorAction Stop
+        Write-MigrationLog -Level 'SUCCESS' -Category 'JOB-EXPORT' -Message "Job-Skript erzeugt ($(@($jobs).Count))" -Detail $f
+        return $f
+    } catch {
+        Write-MigrationLog -Level 'ERROR' -Category 'JOB-EXPORT' -Message "Job-Export fehlgeschlagen" -Detail $_.Exception.Message
+        return $null
+    }
+}
+
+function Export-MigrationProxies {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$SourceServer,[Parameter(Mandatory)][string]$ExchangePath,[switch]$WhatIf)
+    $f = Join-Path $ExchangePath 'migration_proxies.sql'
+    Write-MigrationLog -Level 'STEP' -Category 'PROXY-EXPORT' -Message "Exportiere Proxies als Skript" -Detail $f
+    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'PROXY-EXPORT' -Message "[WHATIF] Proxy-Skript wuerde erzeugt"; return $f }
+    try {
+        $prox = Get-DbaAgentProxy -SqlInstance $SourceServer -ErrorAction Stop
+        if (-not $prox) { Write-MigrationLog -Level 'INFO' -Category 'PROXY-EXPORT' -Message "Keine Proxies vorhanden"; return $null }
+        $null = $prox | Export-DbaScript -FilePath $f -ErrorAction Stop
+        Write-MigrationLog -Level 'SUCCESS' -Category 'PROXY-EXPORT' -Message "Proxy-Skript erzeugt ($(@($prox).Count))" -Detail $f
+        return $f
+    } catch {
+        Write-MigrationLog -Level 'ERROR' -Category 'PROXY-EXPORT' -Message "Proxy-Export fehlgeschlagen" -Detail $_.Exception.Message
+        return $null
+    }
+}
+
+function Export-MigrationLinkedServers {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$SourceServer,[Parameter(Mandatory)][string]$ExchangePath,[switch]$WhatIf)
+    $f = Join-Path $ExchangePath 'migration_linkedservers.sql'
+    Write-MigrationLog -Level 'STEP' -Category 'LS-EXPORT' -Message "Exportiere Linked Server als Skript" -Detail $f
+    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'LS-EXPORT' -Message "[WHATIF] Linked-Server-Skript wuerde erzeugt"; return $f }
+    try {
+        $ls = Get-DbaLinkedServer -SqlInstance $SourceServer -ErrorAction Stop
+        if (-not $ls) { Write-MigrationLog -Level 'INFO' -Category 'LS-EXPORT' -Message "Keine Linked Server vorhanden"; return $null }
+        $null = Export-DbaLinkedServer -SqlInstance $SourceServer -FilePath $f -ErrorAction Stop
+        # Linked-Server-Passwoerter lassen sich nicht immer entschluesseln -> Report
+        Write-SecretsTodo -ExchangePath $ExchangePath -ObjectType 'LinkedServer' -Names (@($ls | Select-Object -ExpandProperty Name))
+        Write-MigrationLog -Level 'SUCCESS' -Category 'LS-EXPORT' -Message "Linked-Server-Skript erzeugt ($(@($ls).Count))" -Detail $f
+        return $f
+    } catch {
+        Write-MigrationLog -Level 'ERROR' -Category 'LS-EXPORT' -Message "Linked-Server-Export fehlgeschlagen" -Detail $_.Exception.Message
+        return $null
+    }
+}
+
+function Export-MigrationCredentials {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$SourceServer,[Parameter(Mandatory)][string]$ExchangePath,[switch]$WhatIf)
+    $f = Join-Path $ExchangePath 'migration_credentials.sql'
+    Write-MigrationLog -Level 'STEP' -Category 'CRED-EXPORT' -Message "Exportiere Credentials als Skript" -Detail $f
+    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'CRED-EXPORT' -Message "[WHATIF] Credential-Skript wuerde erzeugt"; return $f }
+    try {
+        $cr = Get-DbaCredential -SqlInstance $SourceServer -ErrorAction Stop
+        if (-not $cr) { Write-MigrationLog -Level 'INFO' -Category 'CRED-EXPORT' -Message "Keine Credentials vorhanden"; return $null }
+        $null = Export-DbaCredential -SqlInstance $SourceServer -FilePath $f -ErrorAction Stop
+        # Credential-Secrets sind nicht immer entschluesselbar -> Report
+        Write-SecretsTodo -ExchangePath $ExchangePath -ObjectType 'Credential' -Names (@($cr | Select-Object -ExpandProperty Name))
+        Write-MigrationLog -Level 'SUCCESS' -Category 'CRED-EXPORT' -Message "Credential-Skript erzeugt ($(@($cr).Count))" -Detail $f
+        return $f
+    } catch {
+        Write-MigrationLog -Level 'ERROR' -Category 'CRED-EXPORT' -Message "Credential-Export fehlgeschlagen" -Detail $_.Exception.Message
+        return $null
+    }
+}
+
 Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
                                Invoke-DatabaseMigrationDetachAttach,
                                Invoke-PostRestoreCleanup,
@@ -897,6 +1033,11 @@ Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
                                Set-NamedPbmPolicyState,
                                Export-MigrationLogins,
                                Import-MigrationLogins,
+                               Import-MigrationScriptFile,
+                               Export-MigrationAgentJobs,
+                               Export-MigrationProxies,
+                               Export-MigrationLinkedServers,
+                               Export-MigrationCredentials,
                                Invoke-LoginMigration,
                                Invoke-LinkedServerMigration,
                                Invoke-AgentJobMigration,

@@ -114,7 +114,9 @@ function Write-MigrationState {
         # Ob (echte) SQL-Logins zu transferieren sind -> Ziel braucht Mixed Mode
         [bool]$SqlLoginsPresent     = $false,
         # Pfad zum exportierten Login-Skript (Phase 2 importiert daraus)
-        [string]$LoginScriptFile    = ''
+        [string]$LoginScriptFile    = '',
+        # Pfade der Objekt-Skripte (Umweg): @{ Jobs=..; LinkedServers=..; Credentials=..; Proxies=.. }
+        [hashtable]$ObjectScripts   = @{}
     )
 
     $state = [ordered]@{
@@ -133,6 +135,7 @@ function Write-MigrationState {
         LocalBackupPath  = $LocalBackupPath
         SqlLoginsPresent = $SqlLoginsPresent
         LoginScriptFile  = $LoginScriptFile
+        ObjectScripts    = $ObjectScripts
         Phase1CompletedAt = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
         Phase2CompletedAt = ''
     }
