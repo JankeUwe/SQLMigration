@@ -1524,6 +1524,18 @@ $btnMigrate.Add_Click({
                 $done++
             }
 
+            # ----------------------------------------------------------------
+            # Post-Restore-Bereinigung (Ziel)
+            # ----------------------------------------------------------------
+            if ($chks['Datenbanken'] -and $srcDbs.Count -gt 0) {
+                # Verwaiste DB-User reparieren + DB-Owner auf sa setzen
+                Invoke-PostRestoreCleanup -TargetServer $srv -Databases $srcDbs -WhatIf:$whatif
+            }
+            if ($chks['Logins']) {
+                # Verwaiste AD-Logins (geloeschte Domaenenkonten) entfernen
+                Remove-DeadAdLogin -TargetServer $srv -WhatIf:$whatif
+            }
+
             # Login-Migration (Ziel hat Verbindung zu sich selbst; braucht Quell-SMO)
             # Hinweis: Copy-DbaLogin braucht beide Server-Verbindungen -> nicht moeglich
             # in Phase2-only. Daher nur Warnung ausgeben.

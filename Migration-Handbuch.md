@@ -80,9 +80,11 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 7. **PHASE 1 STARTEN** → Zusammenfassung bestätigen.
 8. Nach Abschluss: Erfolgsmeldung beachten. Es wurde eine **Zustandsdatei** im Exchange-Pfad erzeugt.
 
-> Greift das Dienstkonto nicht auf den UNC-Pfad zu, schaltet das Tool automatisch auf den
-> **lokalen Backup-Pfad** um (Hinweis-Dialog „Berechtigungs-Fallback aktiv"). Die Dateien dann
-> manuell auf den Exchange-Pfad bringen.
+> **Standard-Strategie (kein Dienstkonto-/UNC-Problem):** Das Backup wird zuerst in das
+> **lokale Standard-Backup-Verzeichnis des Servers** geschrieben (dort hat das SQL-Dienstkonto
+> immer Schreibrechte) und anschließend per **robocopy** auf den Exchange-Pfad kopiert – der
+> Kopiervorgang läuft im **Admin-Kontext**, daher ist kein UNC-Zugriff des Dienstkontos nötig.
+> Die lokale Sicherung verbleibt als Kopie im Server-Backup-Verzeichnis.
 
 ---
 
@@ -92,8 +94,15 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 2. Das Tool liest die **Zustandsdatei**; Methode und Objektauswahl sind vorbelegt und gesperrt.
 3. **Zielserver** verbinden (vorbelegt mit dem aktuellen Rechner).
 4. **Exchange-/Lokalen Pfad** prüfen.
-5. **PHASE 2 STARTEN** → Restore/Attach der Datenbanken.
-6. Nach Abschluss: Zieldatenbanken prüfen (siehe Post-Check).
+5. **PHASE 2 STARTEN** → robocopy vom Exchange-Pfad in das lokale Verzeichnis des Ziels, dann
+   Restore/Attach der Datenbanken.
+6. **Automatische Nachbearbeitung am Ziel** (läuft direkt nach dem Restore/Attach, respektiert WhatIf):
+   - Verwaiste DB-User werden repariert (`Repair-DbaDbOrphanUser`).
+   - DB-Owner wird auf **sa** gesetzt (per SID `0x01` ermittelt – funktioniert auch bei umbenanntem sa).
+   - Verwaiste **AD-Logins** (gelöschte Domänenkonten) werden entfernt – nur wenn der Objekttyp
+     *Logins* angehakt ist. Sicherheits­regeln: nur Windows-Logins mit Domänen-SID, **keine**
+     System-/sysadmin-Logins, Löschung nur wenn AD den SID **positiv nicht** auflösen kann.
+7. Nach Abschluss: Zieldatenbanken prüfen (siehe Post-Check).
 
 ---
 
@@ -102,8 +111,9 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 - [ ] Alle erwarteten Datenbanken vorhanden, Status **ONLINE**.
 - [ ] `DBCC CHECKDB` ohne Fehler.
 - [ ] Recovery-Modell und Kompatibilitätsgrad korrekt.
-- [ ] **Owner** der Datenbanken gesetzt (`ALTER AUTHORIZATION`).
-- [ ] **Verwaiste Benutzer** geprüft/repariert (`sp_change_users_login` bzw. `Repair-DbaDbOrphanUser`).
+- [ ] **Owner** der Datenbanken = **sa** (wird automatisch in Phase 2 gesetzt) – stichprobenartig prüfen.
+- [ ] **Verwaiste Benutzer** repariert (automatisch in Phase 2) – stichprobenartig prüfen.
+- [ ] **Verwaiste AD-Logins** entfernt (automatisch in Phase 2, wenn *Logins* angehakt) – Log prüfen.
 - [ ] Logins inkl. SIDs vorhanden (sonst Login-Mapping prüfen).
 - [ ] Agent-Jobs / Linked Server / Credentials / Proxies vorhanden und lauffähig (ggf. Direct-Migration).
 - [ ] Anwendungs-Connectionstrings auf den neuen Server umgestellt.
@@ -139,9 +149,11 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 | „dbaTools ist nicht installiert" | `Install-Module dbatools` ausführen. |
 | Verbindungsfehler / Zertifikatfehler | **TrustServerCertificate** aktivieren; Server/Instanz, Port, Firewall prüfen. |
 | „Exchange-Pfad nicht erreichbar" | UNC-Pfad und Berechtigungen prüfen; ggf. lokalen Backup-Pfad nutzen. |
-| Backup landet lokal statt am Share | SQL-**Dienstkonto** hat keinen UNC-Zugriff (Fallback). Datei manuell übertragen oder Dienstkonto berechtigen. |
+| Backup wird lokal erstellt | **So gewollt** (Standard): Backup lokal → robocopy auf den Share im Admin-Kontext. Die lokale Kopie verbleibt im Server-Backup-Verzeichnis. |
+| robocopy-Fehler (ExitCode ≥ 8) | Ziel-/Quellpfad bzw. Berechtigungen des **ausführenden Admins** prüfen; Plattenplatz prüfen. |
 | Phase 2 findet keine Zustandsdatei | Phase 1 wurde nicht (erfolgreich) ausgeführt oder Exchange-Pfad weicht ab. |
-| Verwaiste Benutzer nach Restore | `Repair-DbaDbOrphanUser` auf dem Ziel ausführen. |
+| Verwaiste Benutzer nach Restore | Werden in Phase 2 automatisch repariert; bei Bedarf erneut `Repair-DbaDbOrphanUser` ausführen. |
+| AD-Login fälschlich behalten/entfernt | Bereinigung löscht nur bei **positiv** nicht auflösbarem Domänen-SID; bei DC-Störung wird übersprungen (Log: „AD-Pruefung uebersprungen"). |
 | Logins/Jobs fehlen nach TwoPhase | Erwartetes Verhalten – nur im **Direct-Modus** migrierbar; manuell nachziehen. |
 | Detaillierte Fehlermeldung | Der **Fehler-Dialog** zeigt die komplette Exception-Kette (kopierbar) + Logdatei. |
 
