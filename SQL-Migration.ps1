@@ -497,10 +497,11 @@ if ($script:ActiveRole -eq 'Target') {
 $roleLabel = if ($script:ActiveRole -eq 'Source') { 'QUELL-SERVER' } else { 'ZIEL-SERVER' }
 $roleColor = if ($script:ActiveRole -eq 'Source') { $clrAccent } else { $clrAccentGrn }
 
+$yearSpan = "2025-$((Get-Date).ToString('yy'))"
 $form                  = New-Object System.Windows.Forms.Form
-$form.Text             = "SQL Server Migration Tool  v1.1  -  $roleLabel"
-$form.Size             = New-Object System.Drawing.Size(900, 900)
-$form.MinimumSize      = New-Object System.Drawing.Size(700, 700)
+$form.Text             = "SQL Server Migration Tool  v1.1  -  $roleLabel   |   powershelldba.de - Janke (c) $yearSpan"
+$form.Size             = New-Object System.Drawing.Size(1600, 900)   # 16:9
+$form.MinimumSize      = New-Object System.Drawing.Size(1100, 650)
 $form.StartPosition    = 'CenterScreen'
 $form.BackColor        = $clrBg
 $form.ForeColor        = $clrText
@@ -615,8 +616,10 @@ $txtServer.ForeColor= $clrText
 $txtServer.BorderStyle = 'FixedSingle'
 $txtServer.Size     = New-Object System.Drawing.Size(250, 22)
 $txtServer.Location = New-Object System.Drawing.Point(115, 7)
-# Im Ziel-Modus: Zielserver aus Zustandsdatei vorbelegen
-if ($script:ActiveRole -eq 'Target' -and $script:LoadedState) {
+# Standard: aktuellen Maschinennamen vorbelegen (lokale Instanz)
+$txtServer.Text = $env:COMPUTERNAME
+# Im Ziel-Modus: Zielserver aus Zustandsdatei vorbelegen (ueberschreibt Default)
+if ($script:ActiveRole -eq 'Target' -and $script:LoadedState -and $script:LoadedState.TargetServer) {
     $txtServer.Text = $script:LoadedState.TargetServer
 }
 $pnlConn.Controls.Add($txtServer)
@@ -766,6 +769,27 @@ $tabs           = New-Object System.Windows.Forms.TabControl
 $tabs.Dock      = 'Fill'
 $tabs.BackColor = $clrBg
 $tabs.Font      = $fntSmall
+# Owner-Draw: Tab-Reiter im Dark-Theme einfaerben (Standard-Tabs ignorieren BackColor)
+$tabs.DrawMode  = 'OwnerDrawFixed'
+$tabs.SizeMode  = 'Fixed'
+$tabs.ItemSize  = New-Object System.Drawing.Size(120, 26)
+$tabs.Add_DrawItem({
+    param($sender, $e)
+    $tc       = $sender
+    $page     = $tc.TabPages[$e.Index]
+    $selected = ($e.Index -eq $tc.SelectedIndex)
+    $bg = if ($selected) { $roleColor }  else { $clrHeader }
+    $fg = if ($selected) { [System.Drawing.Color]::White } else { $clrSubText }
+    $rect  = $e.Bounds
+    $brush = New-Object System.Drawing.SolidBrush($bg)
+    $e.Graphics.FillRectangle($brush, $rect)
+    $sf = New-Object System.Drawing.StringFormat
+    $sf.Alignment     = [System.Drawing.StringAlignment]::Center
+    $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+    $tb = New-Object System.Drawing.SolidBrush($fg)
+    $e.Graphics.DrawString($page.Text, $tc.Font, $tb, ([System.Drawing.RectangleF]$rect), $sf)
+    $brush.Dispose(); $tb.Dispose(); $sf.Dispose()
+})
 $pnlMain.Controls.Add($tabs)
 
 # WinForms Dock-Reihenfolge: Fill muss Index 0 sein.
@@ -1362,7 +1386,7 @@ $btnMigrate.Add_Click({
                     }
                     $res = Invoke-DatabaseMigrationBackupRestore `
                         -SourceServer      $srv `
-                        -TargetServer      $srv    # im Phase1-Modus ignoriert `
+                        -TargetServer      $srv `
                         -Databases         $dbs `
                         -ExchangePath      $exPath `
                         -LocalBackupPath   $lPath `
@@ -1378,7 +1402,7 @@ $btnMigrate.Add_Click({
                 elseif ($method -eq 'DetachAttach') {
                     $res = Invoke-DatabaseMigrationDetachAttach `
                         -SourceServer      $srv `
-                        -TargetServer      $srv    # im Phase1-Modus ignoriert `
+                        -TargetServer      $srv `
                         -Databases         $dbs `
                         -ExchangePath      $exPath `
                         -ReattachOnSource:$reatt `
@@ -1454,7 +1478,7 @@ $btnMigrate.Add_Click({
                             [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
                     }
                     $res = Invoke-DatabaseMigrationBackupRestore `
-                        -SourceServer    $srv `   # nicht genutzt in Phase2
+                        -SourceServer    $srv `
                         -TargetServer    $srv `
                         -Databases       $srcDbs `
                         -ExchangePath    $exPath `
@@ -1465,7 +1489,7 @@ $btnMigrate.Add_Click({
                 }
                 elseif ($method -eq 'DetachAttach') {
                     $res = Invoke-DatabaseMigrationDetachAttach `
-                        -SourceServer $srv `   # nicht genutzt in Phase2
+                        -SourceServer $srv `
                         -TargetServer $srv `
                         -Databases    $srcDbs `
                         -ExchangePath $exPath `
