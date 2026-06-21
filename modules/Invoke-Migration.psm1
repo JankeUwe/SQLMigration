@@ -682,10 +682,134 @@ function Invoke-ProxyMigration {
     }
 }
 
+# ---------------------------------------------------------------------------
+# AUTH-VORBEREITUNG ZIEL: SQL-Logins erkennen + Mixed Mode + PBM-Policy
+# ---------------------------------------------------------------------------
+
+# Prueft, ob auf der Quelle (echte) SQL-Logins existieren, die transferiert werden.
+function Test-SourceHasSqlLogins {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$SourceServer,
+        [string[]]$Logins
+    )
+    try {
+        $sql = Get-DbaLogin -SqlInstance $SourceServer -ErrorAction Stop |
+               Where-Object { $_.LoginType -eq 'SqlLogin' -and -not $_.IsSystemObject }
+        if ($Logins) { $sql = $sql | Where-Object { $_.Name -in $Logins } }
+        $cnt = @($sql).Count
+        Write-MigrationLog -Level 'INFO' -Category 'LOGIN-CHECK' -Message "SQL-Logins auf Quelle gefunden: $cnt"
+        return ($cnt -gt 0)
+    }
+    catch {
+        Write-MigrationLog -Level 'WARN' -Category 'LOGIN-CHECK' `
+            -Message "SQL-Login-Pruefung fehlgeschlagen" -Detail $_.Exception.Message
+        return $false
+    }
+}
+
+# Schaltet das Ziel auf Mixed Mode um (+ Dienst-Neustart), wenn SQL-Logins
+# transferiert werden und das Ziel aktuell nur Windows-Authentifizierung nutzt.
+# Gibt die (ggf. nach Neustart neu aufgebaute) Serververbindung zurueck.
+function Enable-MixedModeIfNeeded {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$TargetServer,
+        [bool]$SqlLoginsPresent,
+        [switch]$WhatIf
+    )
+
+    if (-not $SqlLoginsPresent) {
+        Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' `
+            -Message "Keine SQL-Logins zu transferieren - Auth-Modus bleibt unveraendert"
+        return $TargetServer
+    }
+
+    try {
+        $mode = $TargetServer.Settings.LoginMode.ToString()
+        Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' -Message "Aktueller Ziel-Auth-Modus: $mode"
+
+        # 'Integrated' = nur Windows-Authentifizierung
+        if ($mode -ne 'Integrated') {
+            Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' `
+                -Message "Mixed Mode bereits aktiv - kein Umschalten noetig"
+            return $TargetServer
+        }
+
+        if ($WhatIf) {
+            Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' `
+                -Message "[WHATIF] Wuerde auf Mixed Mode umstellen und SQL-Dienst neu starten"
+            return $TargetServer
+        }
+
+        # 1. Auth-Modus umstellen (wirkt erst nach Neustart)
+        $TargetServer.Settings.LoginMode = [Microsoft.SqlServer.Management.Smo.ServerLoginMode]::Mixed
+        $TargetServer.Alter()
+        Write-MigrationLog -Level 'SUCCESS' -Category 'AUTHMODE' `
+            -Message "Auth-Modus auf Mixed gesetzt - Neustart erforderlich"
+
+        # 2. SQL-Dienst neu starten (damit Mixed Mode aktiv wird)
+        $full = $TargetServer.Name
+        $comp = ($full -split '\\')[0]
+        $inst = if ($full -match '\\') { ($full -split '\\')[1] } else { 'MSSQLSERVER' }
+        Write-MigrationLog -Level 'STEP' -Category 'AUTHMODE' -Message "Starte SQL-Dienst neu" -Detail "$comp / $inst"
+        $null = Restart-DbaService -ComputerName $comp -InstanceName $inst -Type Engine -Force -ErrorAction Stop
+        Write-MigrationLog -Level 'SUCCESS' -Category 'AUTHMODE' -Message "SQL-Dienst neu gestartet"
+        Start-Sleep -Seconds 5
+
+        # 3. Verbindung neu aufbauen (alte ist durch den Neustart ungueltig)
+        $new = Connect-DbaInstance -SqlInstance $full -TrustServerCertificate -ErrorAction Stop
+        Write-MigrationLog -Level 'SUCCESS' -Category 'AUTHMODE' -Message "Verbindung nach Neustart wiederhergestellt"
+        return $new
+    }
+    catch {
+        Write-MigrationLog -Level 'ERROR' -Category 'AUTHMODE' `
+            -Message "Mixed-Mode-Umstellung fehlgeschlagen" -Detail $_.Exception.Message
+        return $TargetServer
+    }
+}
+
+# Deaktiviert eine Policy-Based-Management-Policy (z.B. 'New_Password_Policy')
+# vor dem Login-Import, falls vorhanden und aktiv.
+function Disable-NamedPbmPolicy {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$TargetServer,
+        [Parameter(Mandatory)][string]$PolicyName,
+        [switch]$WhatIf
+    )
+    try {
+        $pol = Get-DbaPbmPolicy -SqlInstance $TargetServer -ErrorAction Stop |
+               Where-Object { $_.Name -eq $PolicyName } | Select-Object -First 1
+        if (-not $pol) {
+            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' nicht vorhanden - nichts zu tun"
+            return
+        }
+        if (-not $pol.Enabled) {
+            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' bereits deaktiviert"
+            return
+        }
+        if ($WhatIf) {
+            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "[WHATIF] Policy '$PolicyName' wuerde deaktiviert"
+            return
+        }
+        $pol.Enabled = $false
+        $pol.Alter()
+        Write-MigrationLog -Level 'SUCCESS' -Category 'PBM' -Message "Policy deaktiviert (vor Login-Import): $PolicyName"
+    }
+    catch {
+        Write-MigrationLog -Level 'WARN' -Category 'PBM' `
+            -Message "Policy '$PolicyName' konnte nicht deaktiviert werden" -Detail $_.Exception.Message
+    }
+}
+
 Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
                                Invoke-DatabaseMigrationDetachAttach,
                                Invoke-PostRestoreCleanup,
                                Remove-DeadAdLogin,
+                               Test-SourceHasSqlLogins,
+                               Enable-MixedModeIfNeeded,
+                               Disable-NamedPbmPolicy,
                                Invoke-LoginMigration,
                                Invoke-LinkedServerMigration,
                                Invoke-AgentJobMigration,

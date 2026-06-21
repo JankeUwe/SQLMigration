@@ -1447,6 +1447,12 @@ $btnMigrate.Add_Click({
                     -Detail "Bitte Script auf Zielserver ausfuehren fuer vollstaendige Migration"
             }
 
+            # Erkennen, ob SQL-Logins zu transferieren sind (-> Ziel braucht Mixed Mode)
+            $sqlLoginsPresent = $false
+            if ($chks['Logins']) {
+                try { $sqlLoginsPresent = Test-SourceHasSqlLogins -SourceServer $srv } catch { }
+            }
+
             # Zustandsdatei schreiben (auch im Direct-Modus als Protokoll)
             if (-not $whatif) {
                 $tgtSrv = if ($loadedState) { $loadedState.TargetServer } else { '' }
@@ -1462,7 +1468,8 @@ $btnMigrate.Add_Click({
                     -DbFileMap         $dbFileMap `
                     -ReattachOnSource  $reatt `
                     -WhatIf            $whatif `
-                    -LocalBackupPath   $lPath | Out-Null
+                    -LocalBackupPath   $lPath `
+                    -SqlLoginsPresent  $sqlLoginsPresent | Out-Null
             }
 
             Write-MigrationLog -Level 'INFO' -Category 'PHASE1' `
@@ -1532,7 +1539,20 @@ $btnMigrate.Add_Click({
                 Invoke-PostRestoreCleanup -TargetServer $srv -Databases $srcDbs -WhatIf:$whatif
             }
             if ($chks['Logins']) {
-                # Verwaiste AD-Logins (geloeschte Domaenenkonten) entfernen
+                # --- Vorbereitung VOR dem Login-Import ---
+                # 1. Mixed Mode aktivieren (+ Dienst-Neustart), falls SQL-Logins
+                #    transferiert werden und das Ziel nur Windows-Auth nutzt.
+                #    Rueckgabe = ggf. neu aufgebaute Verbindung nach dem Neustart.
+                $sqlLoginsPresent = $false
+                if ($loadedState -and ($null -ne $loadedState.PSObject.Properties['SqlLoginsPresent'])) {
+                    $sqlLoginsPresent = [bool]$loadedState.SqlLoginsPresent
+                }
+                $srv = Enable-MixedModeIfNeeded -TargetServer $srv -SqlLoginsPresent $sqlLoginsPresent -WhatIf:$whatif
+
+                # 2. Passwort-Policy vor dem Login-Import abschalten
+                Disable-NamedPbmPolicy -TargetServer $srv -PolicyName 'New_Password_Policy' -WhatIf:$whatif
+
+                # 3. Verwaiste AD-Logins (geloeschte Domaenenkonten) entfernen
                 Remove-DeadAdLogin -TargetServer $srv -WhatIf:$whatif
             }
 

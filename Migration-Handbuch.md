@@ -97,6 +97,12 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 5. **PHASE 2 STARTEN** → robocopy vom Exchange-Pfad in das lokale Verzeichnis des Ziels, dann
    Restore/Attach der Datenbanken.
 6. **Automatische Nachbearbeitung am Ziel** (läuft direkt nach dem Restore/Attach, respektiert WhatIf):
+   - **Vor einem Login-Import** (nur wenn Objekttyp *Logins* gewählt): Das Tool erkennt automatisch,
+     ob **SQL-Logins** transferiert werden. Ist das der Fall und das Ziel nutzt **nur Windows-Auth**,
+     wird **Mixed Mode** aktiviert und der **SQL-Dienst neu gestartet** (die Verbindung wird danach
+     automatisch neu aufgebaut – Achtung: bestehende Verbindungen zum Ziel brechen kurz ab). Eine
+     Policy-Based-Management-Policy namens **`New_Password_Policy`** wird – falls vorhanden – vor dem
+     Import **deaktiviert**.
    - Verwaiste DB-User werden repariert (`Repair-DbaDbOrphanUser`).
    - DB-Owner wird auf **sa** gesetzt (per SID `0x01` ermittelt – funktioniert auch bei umbenanntem sa).
    - Verwaiste **AD-Logins** (gelöschte Domänenkonten) werden entfernt – nur wenn der Objekttyp
@@ -115,6 +121,8 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 - [ ] **Verwaiste Benutzer** repariert (automatisch in Phase 2) – stichprobenartig prüfen.
 - [ ] **Verwaiste AD-Logins** entfernt (automatisch in Phase 2, wenn *Logins* angehakt) – Log prüfen.
 - [ ] Logins inkl. SIDs vorhanden (sonst Login-Mapping prüfen).
+- [ ] Bei SQL-Logins: Ziel steht auf **Mixed Mode** (wurde bei Bedarf automatisch umgestellt + Dienst neu gestartet).
+- [ ] Policy `New_Password_Policy` nach dem Import ggf. wieder **aktivieren** (wird vor dem Import deaktiviert, nicht automatisch reaktiviert).
 - [ ] Agent-Jobs / Linked Server / Credentials / Proxies vorhanden und lauffähig (ggf. Direct-Migration).
 - [ ] Anwendungs-Connectionstrings auf den neuen Server umgestellt.
 - [ ] Funktionstest der Anwendung.

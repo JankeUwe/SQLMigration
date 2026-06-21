@@ -110,7 +110,9 @@ function Write-MigrationState {
         [hashtable]$DbFileMap       = @{},              # DbName -> @(Dateien)
         [bool]$ReattachOnSource     = $true,
         [bool]$WhatIf               = $false,
-        [string]$LocalBackupPath    = ''
+        [string]$LocalBackupPath    = '',
+        # Ob (echte) SQL-Logins zu transferieren sind -> Ziel braucht Mixed Mode
+        [bool]$SqlLoginsPresent     = $false
     )
 
     $state = [ordered]@{
@@ -127,6 +129,7 @@ function Write-MigrationState {
         ReattachOnSource = $ReattachOnSource
         WhatIf           = $WhatIf
         LocalBackupPath  = $LocalBackupPath
+        SqlLoginsPresent = $SqlLoginsPresent
         Phase1CompletedAt = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
         Phase2CompletedAt = ''
     }
