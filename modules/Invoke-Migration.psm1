@@ -769,15 +769,17 @@ function Enable-MixedModeIfNeeded {
     }
 }
 
-# Deaktiviert eine Policy-Based-Management-Policy (z.B. 'New_Password_Policy')
-# vor dem Login-Import, falls vorhanden und aktiv.
-function Disable-NamedPbmPolicy {
+# Setzt den Aktiv-Status einer Policy-Based-Management-Policy (z.B. 'New_Password_Policy').
+# -Enabled $false vor dem Login-Import, -Enabled $true zum Reaktivieren danach.
+function Set-NamedPbmPolicyState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$TargetServer,
         [Parameter(Mandatory)][string]$PolicyName,
+        [Parameter(Mandatory)][bool]$Enabled,
         [switch]$WhatIf
     )
+    $verb = if ($Enabled) { 'aktiviert' } else { 'deaktiviert' }
     try {
         $pol = Get-DbaPbmPolicy -SqlInstance $TargetServer -ErrorAction Stop |
                Where-Object { $_.Name -eq $PolicyName } | Select-Object -First 1
@@ -785,22 +787,105 @@ function Disable-NamedPbmPolicy {
             Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' nicht vorhanden - nichts zu tun"
             return
         }
-        if (-not $pol.Enabled) {
-            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' bereits deaktiviert"
+        if ($pol.Enabled -eq $Enabled) {
+            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' bereits $verb"
             return
         }
         if ($WhatIf) {
-            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "[WHATIF] Policy '$PolicyName' wuerde deaktiviert"
+            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "[WHATIF] Policy '$PolicyName' wuerde $verb"
             return
         }
-        $pol.Enabled = $false
+        $pol.Enabled = $Enabled
         $pol.Alter()
-        Write-MigrationLog -Level 'SUCCESS' -Category 'PBM' -Message "Policy deaktiviert (vor Login-Import): $PolicyName"
+        Write-MigrationLog -Level 'SUCCESS' -Category 'PBM' -Message "Policy $verb`: $PolicyName"
     }
     catch {
         Write-MigrationLog -Level 'WARN' -Category 'PBM' `
-            -Message "Policy '$PolicyName' konnte nicht deaktiviert werden" -Detail $_.Exception.Message
+            -Message "Policy '$PolicyName' konnte nicht $verb werden" -Detail $_.Exception.Message
     }
+}
+
+# ---------------------------------------------------------------------------
+# LOGIN-MIGRATION ueber Skript (domaenenuebergreifend / zweistufig tauglich)
+# Copy-DbaLogin braucht beide Server gleichzeitig sichtbar -> bei getrennten
+# Domaenen nicht moeglich. Stattdessen: auf der Quelle per Export-DbaLogin ein
+# CREATE-LOGIN-Skript (inkl. SID + gehashtem Passwort) erzeugen, auf dem Ziel
+# per Invoke-DbaQuery batchweise ausfuehren.
+# ---------------------------------------------------------------------------
+
+# Quelle: Logins in ein .sql-Skript auf dem Exchange-Pfad exportieren.
+function Export-MigrationLogins {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$SourceServer,
+        [Parameter(Mandatory)][string]$ExchangePath,
+        [string[]]$Logins,
+        [switch]$WhatIf
+    )
+    $scriptFile = Join-Path $ExchangePath 'migration_logins.sql'
+    Write-MigrationLog -Level 'STEP' -Category 'LOGIN-EXPORT' -Message "Exportiere Logins als Skript" -Detail $scriptFile
+    if ($WhatIf) {
+        Write-MigrationLog -Level 'INFO' -Category 'LOGIN-EXPORT' -Message "[WHATIF] Login-Skript wuerde erzeugt: $scriptFile"
+        return $scriptFile
+    }
+    try {
+        if (-not (Test-Path $ExchangePath)) { New-Item -ItemType Directory -Path $ExchangePath -Force -ErrorAction Stop | Out-Null }
+        $p = @{
+            SqlInstance     = $SourceServer
+            FilePath        = $scriptFile
+            ExcludeJobs     = $true
+            ExcludeDatabase = $true
+            EnableException = $true
+        }
+        if ($Logins) { $p['Login'] = $Logins }
+        $null = Export-DbaLogin @p
+        Write-MigrationLog -Level 'SUCCESS' -Category 'LOGIN-EXPORT' -Message "Login-Skript erzeugt" -Detail $scriptFile
+        return $scriptFile
+    }
+    catch {
+        Write-MigrationLog -Level 'ERROR' -Category 'LOGIN-EXPORT' -Message "Login-Export fehlgeschlagen" -Detail $_.Exception.Message
+        return $null
+    }
+}
+
+# Ziel: Login-Skript batchweise (an GO getrennt) ausfuehren. Einzelne Batches
+# duerfen scheitern (z.B. Windows-Logins fremder Domaenen) ohne den Rest zu stoppen.
+function Import-MigrationLogins {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$TargetServer,
+        [Parameter(Mandatory)][string]$ScriptFile,
+        [switch]$WhatIf
+    )
+    Write-MigrationLog -Level 'STEP' -Category 'LOGIN-IMPORT' -Message "Importiere Logins aus Skript" -Detail $ScriptFile
+    if (-not (Test-Path $ScriptFile)) {
+        Write-MigrationLog -Level 'ERROR' -Category 'LOGIN-IMPORT' -Message "Login-Skript nicht gefunden" -Detail $ScriptFile
+        return
+    }
+    $sqlText = Get-Content -Path $ScriptFile -Raw -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrWhiteSpace($sqlText)) {
+        Write-MigrationLog -Level 'WARN' -Category 'LOGIN-IMPORT' -Message "Login-Skript ist leer - nichts zu importieren"
+        return
+    }
+    $batches = [regex]::Split($sqlText, '(?im)^\s*GO\s*$') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $ok = 0; $fail = 0
+    foreach ($batch in $batches) {
+        if ($WhatIf) {
+            Write-MigrationLog -Level 'INFO' -Category 'LOGIN-IMPORT' -Message "[WHATIF] Batch wuerde ausgefuehrt" -Detail ($batch.Trim() -split "`n")[0]
+            continue
+        }
+        try {
+            Invoke-DbaQuery -SqlInstance $TargetServer -Query $batch -EnableException -ErrorAction Stop
+            $ok++
+        }
+        catch {
+            $fail++
+            Write-MigrationLog -Level 'WARN' -Category 'LOGIN-IMPORT' `
+                -Message "Batch fehlgeschlagen (uebersprungen)" -Detail $_.Exception.Message
+        }
+    }
+    Write-MigrationLog -Level 'SUCCESS' -Category 'LOGIN-IMPORT' `
+        -Message "Login-Import abgeschlossen" -Detail "OK: $ok | Fehler/uebersprungen: $fail"
 }
 
 Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
@@ -809,7 +894,9 @@ Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
                                Remove-DeadAdLogin,
                                Test-SourceHasSqlLogins,
                                Enable-MixedModeIfNeeded,
-                               Disable-NamedPbmPolicy,
+                               Set-NamedPbmPolicyState,
+                               Export-MigrationLogins,
+                               Import-MigrationLogins,
                                Invoke-LoginMigration,
                                Invoke-LinkedServerMigration,
                                Invoke-AgentJobMigration,

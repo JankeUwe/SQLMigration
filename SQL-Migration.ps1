@@ -1447,10 +1447,16 @@ $btnMigrate.Add_Click({
                     -Detail "Bitte Script auf Zielserver ausfuehren fuer vollstaendige Migration"
             }
 
-            # Erkennen, ob SQL-Logins zu transferieren sind (-> Ziel braucht Mixed Mode)
+            # Logins: SQL-Logins erkennen (-> Ziel braucht Mixed Mode) und als Skript
+            # exportieren (Phase 2 legt sie per Invoke-DbaQuery an - domaenenuebergreifend).
             $sqlLoginsPresent = $false
+            $loginScriptFile  = ''
             if ($chks['Logins']) {
                 try { $sqlLoginsPresent = Test-SourceHasSqlLogins -SourceServer $srv } catch { }
+                try {
+                    $sf = Export-MigrationLogins -SourceServer $srv -ExchangePath $exPath -WhatIf:$whatif
+                    if ($sf) { $loginScriptFile = $sf }
+                } catch { }
             }
 
             # Zustandsdatei schreiben (auch im Direct-Modus als Protokoll)
@@ -1469,7 +1475,8 @@ $btnMigrate.Add_Click({
                     -ReattachOnSource  $reatt `
                     -WhatIf            $whatif `
                     -LocalBackupPath   $lPath `
-                    -SqlLoginsPresent  $sqlLoginsPresent | Out-Null
+                    -SqlLoginsPresent  $sqlLoginsPresent `
+                    -LoginScriptFile   $loginScriptFile | Out-Null
             }
 
             Write-MigrationLog -Level 'INFO' -Category 'PHASE1' `
@@ -1539,30 +1546,46 @@ $btnMigrate.Add_Click({
                 Invoke-PostRestoreCleanup -TargetServer $srv -Databases $srcDbs -WhatIf:$whatif
             }
             if ($chks['Logins']) {
-                # --- Vorbereitung VOR dem Login-Import ---
                 # 1. Mixed Mode aktivieren (+ Dienst-Neustart), falls SQL-Logins
                 #    transferiert werden und das Ziel nur Windows-Auth nutzt.
                 #    Rueckgabe = ggf. neu aufgebaute Verbindung nach dem Neustart.
                 $sqlLoginsPresent = $false
-                if ($loadedState -and ($null -ne $loadedState.PSObject.Properties['SqlLoginsPresent'])) {
-                    $sqlLoginsPresent = [bool]$loadedState.SqlLoginsPresent
+                $loginScriptFile  = ''
+                if ($loadedState) {
+                    if ($null -ne $loadedState.PSObject.Properties['SqlLoginsPresent']) {
+                        $sqlLoginsPresent = [bool]$loadedState.SqlLoginsPresent
+                    }
+                    if ($null -ne $loadedState.PSObject.Properties['LoginScriptFile']) {
+                        $loginScriptFile = [string]$loadedState.LoginScriptFile
+                    }
                 }
                 $srv = Enable-MixedModeIfNeeded -TargetServer $srv -SqlLoginsPresent $sqlLoginsPresent -WhatIf:$whatif
 
-                # 2. Passwort-Policy vor dem Login-Import abschalten
-                Disable-NamedPbmPolicy -TargetServer $srv -PolicyName 'New_Password_Policy' -WhatIf:$whatif
+                # 2. Passwort-Policy VOR dem Login-Import abschalten
+                Set-NamedPbmPolicyState -TargetServer $srv -PolicyName 'New_Password_Policy' -Enabled $false -WhatIf:$whatif
 
-                # 3. Verwaiste AD-Logins (geloeschte Domaenenkonten) entfernen
+                # 3. Logins aus dem Skript anlegen (Export-DbaLogin -> Invoke-DbaQuery)
+                if ($loginScriptFile) {
+                    Import-MigrationLogins -TargetServer $srv -ScriptFile $loginScriptFile -WhatIf:$whatif
+                } else {
+                    Write-MigrationLog -Level 'WARN' -Category 'LOGIN-IMPORT' `
+                        -Message "Kein Login-Skript in der Zustandsdatei - Login-Import uebersprungen"
+                }
+
+                # 4. Passwort-Policy abschliessend wieder einschalten
+                Set-NamedPbmPolicyState -TargetServer $srv -PolicyName 'New_Password_Policy' -Enabled $true -WhatIf:$whatif
+
+                # 5. Verwaiste AD-Logins (geloeschte Domaenenkonten) entfernen
                 Remove-DeadAdLogin -TargetServer $srv -WhatIf:$whatif
             }
 
-            # Login-Migration (Ziel hat Verbindung zu sich selbst; braucht Quell-SMO)
-            # Hinweis: Copy-DbaLogin braucht beide Server-Verbindungen -> nicht moeglich
-            # in Phase2-only. Daher nur Warnung ausgeben.
-            if ($chks['Logins'] -or $chks['Agent Jobs'] -or
-                $chks['Linked Server'] -or $chks['Credentials'] -or $chks['Proxies']) {
+            # Logins werden in Phase 2 ueber das Skript migriert (siehe oben).
+            # Agent Jobs / Linked Server / Credentials / Proxies brauchen weiterhin
+            # die gleichzeitige Verbindung zu beiden Servern (Copy-Dba*) -> nur Direct.
+            if ($chks['Agent Jobs'] -or $chks['Linked Server'] -or
+                $chks['Credentials'] -or $chks['Proxies']) {
                 Write-MigrationLog -Level 'WARN' -Category 'PHASE2' `
-                    -Message "Login/Job/LS/Cred/Proxy-Migration erfordert gleichzeitige Verbindung zu Quell- und Zielserver" `
+                    -Message "Job/LS/Cred/Proxy-Migration erfordert gleichzeitige Verbindung zu Quell- und Zielserver" `
                     -Detail "Diese Objekte koennen nur im Direct-Modus (beide Server sichtbar) migriert werden."
             }
 

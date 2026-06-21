@@ -112,7 +112,9 @@ function Write-MigrationState {
         [bool]$WhatIf               = $false,
         [string]$LocalBackupPath    = '',
         # Ob (echte) SQL-Logins zu transferieren sind -> Ziel braucht Mixed Mode
-        [bool]$SqlLoginsPresent     = $false
+        [bool]$SqlLoginsPresent     = $false,
+        # Pfad zum exportierten Login-Skript (Phase 2 importiert daraus)
+        [string]$LoginScriptFile    = ''
     )
 
     $state = [ordered]@{
@@ -130,6 +132,7 @@ function Write-MigrationState {
         WhatIf           = $WhatIf
         LocalBackupPath  = $LocalBackupPath
         SqlLoginsPresent = $SqlLoginsPresent
+        LoginScriptFile  = $LoginScriptFile
         Phase1CompletedAt = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
         Phase2CompletedAt = ''
     }

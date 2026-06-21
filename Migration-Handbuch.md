@@ -24,9 +24,11 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 - **TwoPhase** – Quelle und Ziel sind getrennt: erst Phase 1 auf der Quelle, dann Phase 2 auf dem Ziel,
   Datenträgeraustausch über den Exchange-Pfad (UNC-Share).
 
-> **Wichtig:** Logins, Agent-Jobs, Linked Server, Credentials und Proxies können nur im **Direct-Modus**
-> (gleichzeitige Verbindung zu beiden Servern) migriert werden. Im TwoPhase-Modus werden in Phase 1/2
-> nur die **Datenbanken** übertragen; die übrigen Objekte sind manuell bzw. via Direct nachzuziehen.
+> **Wichtig:** **Datenbanken** und **Logins** werden in beiden Modi migriert – Logins über ein
+> exportiertes Skript (`Export-DbaLogin` → `Invoke-DbaQuery`), das auch bei getrennten Domänen
+> funktioniert. **Agent-Jobs, Linked Server, Credentials und Proxies** benötigen weiterhin den
+> **Direct-Modus** (gleichzeitige Verbindung zu beiden Servern, `Copy-Dba*`) und sind im TwoPhase-Modus
+> manuell bzw. via Direct nachzuziehen.
 
 ---
 
@@ -97,12 +99,17 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 5. **PHASE 2 STARTEN** → robocopy vom Exchange-Pfad in das lokale Verzeichnis des Ziels, dann
    Restore/Attach der Datenbanken.
 6. **Automatische Nachbearbeitung am Ziel** (läuft direkt nach dem Restore/Attach, respektiert WhatIf):
-   - **Vor einem Login-Import** (nur wenn Objekttyp *Logins* gewählt): Das Tool erkennt automatisch,
-     ob **SQL-Logins** transferiert werden. Ist das der Fall und das Ziel nutzt **nur Windows-Auth**,
-     wird **Mixed Mode** aktiviert und der **SQL-Dienst neu gestartet** (die Verbindung wird danach
-     automatisch neu aufgebaut – Achtung: bestehende Verbindungen zum Ziel brechen kurz ab). Eine
-     Policy-Based-Management-Policy namens **`New_Password_Policy`** wird – falls vorhanden – vor dem
-     Import **deaktiviert**.
+   - **Login-Migration (Objekttyp *Logins*)** – domänenübergreifend/zweistufig tauglich:
+     - In **Phase 1** werden die Logins per `Export-DbaLogin` als **CREATE-LOGIN-Skript**
+       (inkl. SID + gehashtem Passwort) auf den Exchange-Pfad exportiert (`migration_logins.sql`).
+       Das ersetzt `Copy-DbaLogin`, das beide Server gleichzeitig sehen müsste.
+     - In **Phase 2** wird das Skript **batchweise** (an `GO`) per `Invoke-DbaQuery` ausgeführt;
+       einzelne Batches dürfen scheitern (z. B. Windows-Logins fremder Domänen) ohne den Rest zu stoppen.
+     - **Vor** dem Import: Erkennt das Tool **SQL-Logins** und steht das Ziel auf **nur Windows-Auth**,
+       wird **Mixed Mode** aktiviert und der **SQL-Dienst neu gestartet** (Verbindung wird automatisch
+       neu aufgebaut – bestehende Verbindungen zum Ziel brechen kurz ab). Die Policy
+       **`New_Password_Policy`** wird – falls vorhanden – **deaktiviert**.
+     - **Nach** dem Import wird `New_Password_Policy` wieder **aktiviert**.
    - Verwaiste DB-User werden repariert (`Repair-DbaDbOrphanUser`).
    - DB-Owner wird auf **sa** gesetzt (per SID `0x01` ermittelt – funktioniert auch bei umbenanntem sa).
    - Verwaiste **AD-Logins** (gelöschte Domänenkonten) werden entfernt – nur wenn der Objekttyp
@@ -120,9 +127,9 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 - [ ] **Owner** der Datenbanken = **sa** (wird automatisch in Phase 2 gesetzt) – stichprobenartig prüfen.
 - [ ] **Verwaiste Benutzer** repariert (automatisch in Phase 2) – stichprobenartig prüfen.
 - [ ] **Verwaiste AD-Logins** entfernt (automatisch in Phase 2, wenn *Logins* angehakt) – Log prüfen.
-- [ ] Logins inkl. SIDs vorhanden (sonst Login-Mapping prüfen).
+- [ ] Logins inkl. SIDs vorhanden (per Skript angelegt) – Windows-Logins fremder Domänen ggf. im Log prüfen.
 - [ ] Bei SQL-Logins: Ziel steht auf **Mixed Mode** (wurde bei Bedarf automatisch umgestellt + Dienst neu gestartet).
-- [ ] Policy `New_Password_Policy` nach dem Import ggf. wieder **aktivieren** (wird vor dem Import deaktiviert, nicht automatisch reaktiviert).
+- [ ] Policy `New_Password_Policy` wieder **aktiv** (wird nach dem Import automatisch reaktiviert) – stichprobenartig prüfen.
 - [ ] Agent-Jobs / Linked Server / Credentials / Proxies vorhanden und lauffähig (ggf. Direct-Migration).
 - [ ] Anwendungs-Connectionstrings auf den neuen Server umgestellt.
 - [ ] Funktionstest der Anwendung.
@@ -162,7 +169,8 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 | Phase 2 findet keine Zustandsdatei | Phase 1 wurde nicht (erfolgreich) ausgeführt oder Exchange-Pfad weicht ab. |
 | Verwaiste Benutzer nach Restore | Werden in Phase 2 automatisch repariert; bei Bedarf erneut `Repair-DbaDbOrphanUser` ausführen. |
 | AD-Login fälschlich behalten/entfernt | Bereinigung löscht nur bei **positiv** nicht auflösbarem Domänen-SID; bei DC-Störung wird übersprungen (Log: „AD-Pruefung uebersprungen"). |
-| Logins/Jobs fehlen nach TwoPhase | Erwartetes Verhalten – nur im **Direct-Modus** migrierbar; manuell nachziehen. |
+| Logins fehlen nach TwoPhase | Login-Skript prüfen (`migration_logins.sql` im Exchange-Pfad); einzelne Batches können scheitern (Log „LOGIN-IMPORT"). Windows-Logins fremder Domänen lassen sich nicht anlegen. |
+| Jobs/LS/Cred/Proxy fehlen nach TwoPhase | Erwartet – nur im **Direct-Modus** migrierbar; manuell nachziehen. |
 | Detaillierte Fehlermeldung | Der **Fehler-Dialog** zeigt die komplette Exception-Kette (kopierbar) + Logdatei. |
 
 ---
