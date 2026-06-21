@@ -67,7 +67,7 @@ function Get-SqlDbUsers {
                      Select-Object @{N='Database';E={$db.Name}},
                                    Name, LoginType, Login, AuthenticationType,
                                    IsSystemObject, CreateDate
-            if ($users) { $result.AddRange([object[]]$users) }
+            if ($users) { $result.AddRange([System.Management.Automation.PSObject[]]$users) }
         }
         Write-MigrationLog -Level 'INFO' -Category 'GET-USER' `
             -Message "DB-User gelesen: $($result.Count)" -Detail $Server.Name
