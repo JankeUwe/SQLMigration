@@ -1,7 +1,7 @@
 # SQL Server Migration – Arbeitshandbuch & Checkliste
 
 Praxisleitfaden für Administratoren zum Tool **SQL-Migration.ps1** (WinForms-GUI auf dbatools-Basis).
-Stand: v1.1 · powershelldba.de – Janke
+Stand: v1.2 · powershelldba.de – Janke
 
 ---
 
@@ -32,11 +32,16 @@ Im Verbindungs-Panel die **Gegenstelle** (Ziel- bzw. Quellserver) eintragen und 
 Das Tool zeigt, ob **Direkt** möglich ist. Über **Verfahren** (`Auto` / `Direkt` / `Umweg`) lässt sich die
 Entscheidung übersteuern; `Auto` wählt anhand der Erreichbarkeit.
 
-> **Wichtig:** **Datenbanken** und **Logins** werden in beiden Modi migriert – Logins über ein
-> exportiertes Skript (`Export-DbaLogin` → `Invoke-DbaQuery`), das auch bei getrennten Domänen
-> funktioniert. **Agent-Jobs, Linked Server, Credentials und Proxies** benötigen weiterhin den
-> **Direct-Modus** (gleichzeitige Verbindung zu beiden Servern, `Copy-Dba*`) und sind im TwoPhase-Modus
-> manuell bzw. via Direct nachzuziehen.
+> **Wichtig:** **Alle Objekttypen** werden in **beiden** Modi migriert. Im **Direct-Modus** direkt via
+> `Copy-Dba*`; im **TwoPhase-Modus** über exportierte Skripte, die auch bei getrennten Domänen
+> funktionieren: Logins via `Export-DbaLogin` → `Invoke-DbaQuery`, sowie **Agent-Jobs, Linked Server,
+> Credentials und Proxies** via `Export-Dba*`/`Export-DbaScript` → batchweiser `Invoke-DbaQuery`-Import
+> (Skripte `migration_jobs.sql`, `migration_linkedservers.sql`, `migration_credentials.sql`,
+> `migration_proxies.sql` im Exchange-Pfad; Import-Reihenfolge Credentials → Proxies → Linked Server → Agent Jobs).
+>
+> **Einschränkung:** Bei **Credentials** und **Linked Servern** sind die hinterlegten **Secrets/Passwörter**
+> nicht immer entschlüsselbar – das Tool erzeugt dafür eine **TODO-Liste** (`Write-SecretsTodo`) zum
+> manuellen Nachtragen am Ziel.
 
 ---
 
@@ -138,7 +143,8 @@ Entscheidung übersteuern; `Auto` wählt anhand der Erreichbarkeit.
 - [ ] Logins inkl. SIDs vorhanden (per Skript angelegt) – Windows-Logins fremder Domänen ggf. im Log prüfen.
 - [ ] Bei SQL-Logins: Ziel steht auf **Mixed Mode** (wurde bei Bedarf automatisch umgestellt + Dienst neu gestartet).
 - [ ] Policy `New_Password_Policy` wieder **aktiv** (wird nach dem Import automatisch reaktiviert) – stichprobenartig prüfen.
-- [ ] Agent-Jobs / Linked Server / Credentials / Proxies vorhanden und lauffähig (ggf. Direct-Migration).
+- [ ] Agent-Jobs / Linked Server / Credentials / Proxies vorhanden und lauffähig (werden in **beiden** Modi
+      migriert; bei Credentials/Linked Servern ggf. **Secrets/Passwörter laut TODO-Liste** nachtragen).
 - [ ] Anwendungs-Connectionstrings auf den neuen Server umgestellt.
 - [ ] Funktionstest der Anwendung.
 - [ ] Quelldatenbanken erst nach erfolgreicher Abnahme deaktivieren/abhängen.
@@ -178,7 +184,7 @@ Entscheidung übersteuern; `Auto` wählt anhand der Erreichbarkeit.
 | Verwaiste Benutzer nach Restore | Werden in Phase 2 automatisch repariert; bei Bedarf erneut `Repair-DbaDbOrphanUser` ausführen. |
 | AD-Login fälschlich behalten/entfernt | Bereinigung löscht nur bei **positiv** nicht auflösbarem Domänen-SID; bei DC-Störung wird übersprungen (Log: „AD-Pruefung uebersprungen"). |
 | Logins fehlen nach TwoPhase | Login-Skript prüfen (`migration_logins.sql` im Exchange-Pfad); einzelne Batches können scheitern (Log „LOGIN-IMPORT"). Windows-Logins fremder Domänen lassen sich nicht anlegen. |
-| Jobs/LS/Cred/Proxy fehlen nach TwoPhase | Erwartet – nur im **Direct-Modus** migrierbar; manuell nachziehen. |
+| Jobs/LS/Cred/Proxy fehlen nach TwoPhase | Skript-Export/-Import prüfen: `migration_jobs.sql` / `migration_linkedservers.sql` / `migration_credentials.sql` / `migration_proxies.sql` im Exchange-Pfad; Log-Kategorien `*-EXPORT` (Phase 1) und `CRED-/PROXY-/LS-/JOB-IMPORT` (Phase 2). Bei Credentials/Linked Servern: **Secrets laut TODO-Liste** manuell nachtragen. |
 | Detaillierte Fehlermeldung | Der **Fehler-Dialog** zeigt die komplette Exception-Kette (kopierbar) + Logdatei. |
 
 ---

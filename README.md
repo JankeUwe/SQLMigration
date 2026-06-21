@@ -6,21 +6,22 @@ PowerShell WinForms-Tool zur zweiphasigen SQL Server Datenbankmigrationen — en
 
 `SQLMigration` ist eine grafische PowerShell-Anwendung (WinForms) für SQL Server Migrationen in komplexen Netzwerkumgebungen. Das Tool unterstützt direkte Migrationen (Quell- und Zielserver erreichbar) sowie zweiphasige Migrationen über eine Zustandsdatei — für Umgebungen ohne direkte Netzwerkverbindung zwischen den Servern.
 
-**Version:** 1.1 | **Getestet auf:** Windows Server 2022 / SQL Server 2016–2022
+**Version:** 1.2 | **Getestet auf:** Windows Server 2022 / SQL Server 2016–2022
 
 ## Features
 
-- **WinForms GUI**: Rollenauswahl (Quelle / Ziel / Automatisch) beim Start, zeigt nur die jeweils relevante Seite
-- **Zweiphasige Migration**: Phase 1 auf dem Quellserver (Backup/Export), Phase 2 auf dem Zielserver (Restore/Import) — State-Übergabe per JSON-Datei über Exchange-Pfad
-- **Automatische Szenario-Erkennung**: Zielserver TCP-erreichbar → Direct-Modus; nicht erreichbar → TwoPhase-Modus
-- **Mehrere Migrationsmethoden**:
-  - Backup / Restore
-  - Detach / Attach
-- **Migrierbare Objekte**: Datenbanken, Logins, SQL Agent Jobs, Linked Server, SSIS-Pakete
-- **State Management**: JSON-basierte Zustandsdatei für getrennte Netzwerke
-- **WhatIf-Modus**: Vollständige Simulation ohne tatsächliche Änderungen
-- **Strukturiertes Logging**: Alle Schritte werden protokolliert
-- **dbaTools-Integration**: Verbindungsmanagement und SQL-Operationen
+- **WinForms GUI**: Rollenauswahl (Quelle / Ziel / Automatisch) beim Start, zeigt nur die jeweils relevante Seite. Objektauswahl je Typ über Reiter (Buttons *Alle/Keine* je Reiter bzw. *Alle Tabs*).
+- **Zwei Verfahren mit automatischer Erkennung** (TCP-Erreichbarkeit der Gegenstelle; per *Verfahren* `Auto`/`Direkt`/`Umweg` übersteuerbar):
+  - **Direkt** – Quelle und Ziel gleichzeitig erreichbar → **ein Durchlauf** vom Quellserver; Objekte direkt via `Copy-Dba*`. Transport: lokales Backup → **robocopy in die Admin-Freigabe des Ziels** (UNC), Restore über den lokalen Zielpfad.
+  - **Umweg (TwoPhase)** – Quelle/Ziel getrennt (z. B. verschiedene Domänen): Phase 1 Backup + **Skript-Export** aller Objekte, Phase 2 Restore + **Skript-Import** (`Invoke-DbaQuery`). State-Übergabe per JSON-Zustandsdatei über den Exchange-Pfad.
+- **Migrationsmethoden**: **Backup / Restore** (Standard, DB bleibt online) oder **Detach / Attach** (optional *Re-Attach* auf der Quelle).
+- **Migrierbare Objekte**: Datenbanken, **Logins**, DB-User, **Linked Server**, **Agent Jobs**, **Credentials**, **Proxies** — in **beiden** Verfahren (Direct via `Copy-Dba*`, TwoPhase via Skript-Export/-Import).
+- **Domänenübergreifend**: Logins via `Export-DbaLogin` → `Invoke-DbaQuery` (inkl. SID + Passwort-Hash); Jobs/LS/Cred/Proxy via `Export-Dba*` / `Export-DbaScript`. **Secrets-TODO**: nicht entschlüsselbare Credential-/Linked-Server-Passwörter werden zum manuellen Nachtragen aufgelistet.
+- **Automatische Nachbearbeitung am Ziel**: verwaiste DB-User reparieren, DB-Owner → `sa` (per SID `0x01`), verwaiste **AD-Logins** entfernen, bei SQL-Logins **Mixed Mode** aktivieren (+ SQL-Dienst-Neustart) und Policy `New_Password_Policy` aus/ein.
+- **WhatIf-Modus**: vollständige Simulation ohne tatsächliche Änderungen.
+- **State Management**: JSON-basierte Zustandsdatei für getrennte Netzwerke.
+- **Strukturiertes Logging**: alle Schritte protokolliert (Log + CSV in der GUI).
+- **dbatools-Integration**: Verbindungsmanagement und SQL-Operationen.
 
 ## Voraussetzungen
 
