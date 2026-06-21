@@ -18,11 +18,17 @@ Es kennt zwei Betriebsarten, die beim Start abgefragt werden (oder per `-Role` v
 | **Ziel (Phase 2)** | Kopieren vom Exchange-Pfad + Restore bzw. Attach. Liest die Zustandsdatei. |
 | **Automatisch** | Zustandsdatei im Exchange-Pfad vorhanden → Ziel, sonst → Quelle. |
 
-**Szenarien:**
+**Szenarien / Verfahren:**
 
-- **Direct** – Zielserver ist vom Quellserver erreichbar (ein Durchlauf möglich).
-- **TwoPhase** – Quelle und Ziel sind getrennt: erst Phase 1 auf der Quelle, dann Phase 2 auf dem Ziel,
-  Datenträgeraustausch über den Exchange-Pfad (UNC-Share).
+- **Direkt** – Gegenstelle (anderer Server) ist erreichbar → **ein Durchlauf** vom Quellserver aus:
+  DB via Backup→robocopy→Restore, Logins/Jobs/LS/Cred/Proxy direkt via `Copy-Dba*`.
+- **Umweg (TwoPhase)** – Quelle und Ziel getrennt (z. B. verschiedene Domänen): erst Phase 1 auf der
+  Quelle (Backup + **Skript-Export** aller Objekte auf den Exchange-Pfad), dann Phase 2 auf dem Ziel
+  (Restore + **Skript-Import**). Alle Objekttypen werden hier per Skript übertragen.
+
+Im Verbindungs-Panel die **Gegenstelle** (Ziel- bzw. Quellserver) eintragen und **„Verbindung prüfen"**:
+Das Tool zeigt, ob **Direkt** möglich ist. Über **Verfahren** (`Auto` / `Direkt` / `Umweg`) lässt sich die
+Entscheidung übersteuern; `Auto` wählt anhand der Erreichbarkeit.
 
 > **Wichtig:** **Datenbanken** und **Logins** werden in beiden Modi migriert – Logins über ein
 > exportiertes Skript (`Export-DbaLogin` → `Invoke-DbaQuery`), das auch bei getrennten Domänen

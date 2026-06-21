@@ -1024,6 +1024,64 @@ function Export-MigrationCredentials {
     }
 }
 
+# ---------------------------------------------------------------------------
+# DIREKT-MIGRATION (ein Durchlauf, beide Server sichtbar)
+# Wiederverwendet die vorhandenen Funktionen: DB via Backup/Restore (lokal +
+# robocopy, Mode Full), Objekte direkt via Copy-Dba* (Quelle+Ziel gleichzeitig).
+# ---------------------------------------------------------------------------
+function Invoke-DirectMigration {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$SourceServer,
+        [Parameter(Mandatory)]$TargetServer,
+        [string[]]$Databases = @(),
+        [Parameter(Mandatory)][hashtable]$Objects,
+        [Parameter(Mandatory)][string]$ExchangePath,
+        [string]$LocalBackupPath  = 'F:\Daten\SQL\Backup',
+        [string]$Method           = 'BackupRestore',
+        [bool]$SqlLoginsPresent   = $false,
+        [switch]$WhatIf
+    )
+    Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direkt-Migration gestartet (ein Durchlauf)"
+
+    # 1. Datenbanken (Full: Backup Quelle -> robocopy -> Restore Ziel)
+    if ($Objects['Datenbanken'] -and $Databases.Count -gt 0) {
+        if ($Method -eq 'DetachAttach') {
+            $null = Invoke-DatabaseMigrationDetachAttach -SourceServer $SourceServer -TargetServer $TargetServer `
+                -Databases $Databases -ExchangePath $ExchangePath -Mode 'Full' -WhatIf:$WhatIf
+        } else {
+            $null = Invoke-DatabaseMigrationBackupRestore -SourceServer $SourceServer -TargetServer $TargetServer `
+                -Databases $Databases -ExchangePath $ExchangePath -LocalBackupPath $LocalBackupPath -Mode 'Full' -WhatIf:$WhatIf
+        }
+        Invoke-PostRestoreCleanup -TargetServer $TargetServer -Databases $Databases -WhatIf:$WhatIf
+    }
+
+    # 2. Logins (Mixed Mode + Policy aus -> Copy-DbaLogin -> Policy ein -> AD-Cleanup)
+    if ($Objects['Logins']) {
+        $TargetServer = Enable-MixedModeIfNeeded -TargetServer $TargetServer -SqlLoginsPresent $SqlLoginsPresent -WhatIf:$WhatIf
+        Set-NamedPbmPolicyState -TargetServer $TargetServer -PolicyName 'New_Password_Policy' -Enabled $false -WhatIf:$WhatIf
+        try { Invoke-LoginMigration -SourceServer $SourceServer -TargetServer $TargetServer -SyncSids -WhatIf:$WhatIf }
+        catch { Write-MigrationLog -Level 'WARN' -Category 'DIRECT' -Message "Login-Migration (direkt) mit Fehlern" -Detail $_.Exception.Message }
+        Set-NamedPbmPolicyState -TargetServer $TargetServer -PolicyName 'New_Password_Policy' -Enabled $true -WhatIf:$WhatIf
+        Remove-DeadAdLogin -TargetServer $TargetServer -WhatIf:$WhatIf
+    }
+
+    # 3. Weitere Objekte direkt (Copy-Dba*)
+    foreach ($pair in @(
+            @{ Key='Credentials';   Fn={ Invoke-CredentialMigration   -SourceServer $SourceServer -TargetServer $TargetServer -WhatIf:$WhatIf } },
+            @{ Key='Proxies';       Fn={ Invoke-ProxyMigration        -SourceServer $SourceServer -TargetServer $TargetServer -WhatIf:$WhatIf } },
+            @{ Key='Linked Server'; Fn={ Invoke-LinkedServerMigration -SourceServer $SourceServer -TargetServer $TargetServer -WhatIf:$WhatIf } },
+            @{ Key='Agent Jobs';    Fn={ Invoke-AgentJobMigration     -SourceServer $SourceServer -TargetServer $TargetServer -WhatIf:$WhatIf } }
+        )) {
+        if ($Objects[$pair.Key]) {
+            try { & $pair.Fn }
+            catch { Write-MigrationLog -Level 'WARN' -Category 'DIRECT' -Message "$($pair.Key)-Migration (direkt) mit Fehlern" -Detail $_.Exception.Message }
+        }
+    }
+
+    Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT' -Message "Direkt-Migration abgeschlossen"
+}
+
 Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
                                Invoke-DatabaseMigrationDetachAttach,
                                Invoke-PostRestoreCleanup,
@@ -1038,6 +1096,7 @@ Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
                                Export-MigrationProxies,
                                Export-MigrationLinkedServers,
                                Export-MigrationCredentials,
+                               Invoke-DirectMigration,
                                Invoke-LoginMigration,
                                Invoke-LinkedServerMigration,
                                Invoke-AgentJobMigration,

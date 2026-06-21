@@ -708,8 +708,72 @@ $lblInfo.AutoSize = $false; $lblInfo.Size = New-Object System.Drawing.Size(350, 
 $lblInfo.Location = New-Object System.Drawing.Point(190, 107)
 $pnlConn.Controls.Add($lblInfo)
 
+# --- Gegenstelle (anderer Server) + Verfahrenswahl ---
+$otherLbl = if ($script:ActiveRole -eq 'Source') { 'Zielserver:' } else { 'Quellserver:' }
+$lblOther = New-Object System.Windows.Forms.Label
+$lblOther.Text = $otherLbl; $lblOther.Font = $fntSmall
+$lblOther.ForeColor = $clrSubText; $lblOther.AutoSize = $true
+$lblOther.Location = New-Object System.Drawing.Point(8, 135)
+$pnlConn.Controls.Add($lblOther)
+
+$txtOther = New-Object System.Windows.Forms.TextBox
+$txtOther.Font = $fntMono; $txtOther.BackColor = $clrInput; $txtOther.ForeColor = $clrText
+$txtOther.BorderStyle = 'FixedSingle'; $txtOther.Size = New-Object System.Drawing.Size(250, 22)
+$txtOther.Location = New-Object System.Drawing.Point(115, 132)
+if ($script:ActiveRole -eq 'Target' -and $script:LoadedState -and $script:LoadedState.SourceServer) {
+    $txtOther.Text = $script:LoadedState.SourceServer
+}
+$pnlConn.Controls.Add($txtOther)
+
+$btnCheck = New-Object System.Windows.Forms.Button
+$btnCheck.Text = 'Verbindung pruefen'; $btnCheck.Font = $fntSmall
+$btnCheck.Size = New-Object System.Drawing.Size(130, 22)
+$btnCheck.Location = New-Object System.Drawing.Point(375, 132)
+$btnCheck.BackColor = [System.Drawing.Color]::FromArgb(60,63,70)
+$btnCheck.ForeColor = $clrText; $btnCheck.FlatStyle = 'Flat'; $btnCheck.FlatAppearance.BorderSize = 0
+$pnlConn.Controls.Add($btnCheck)
+
+$lblVerf = New-Object System.Windows.Forms.Label
+$lblVerf.Text = 'Verfahren:'; $lblVerf.Font = $fntSmall
+$lblVerf.ForeColor = $clrSubText; $lblVerf.AutoSize = $true
+$lblVerf.Location = New-Object System.Drawing.Point(515, 135)
+$pnlConn.Controls.Add($lblVerf)
+
+$cmbVerfahren = New-Object System.Windows.Forms.ComboBox
+$cmbVerfahren.Font = $fntSmall; $cmbVerfahren.BackColor = $clrInput; $cmbVerfahren.ForeColor = $clrText
+$cmbVerfahren.FlatStyle = 'Flat'; $cmbVerfahren.DropDownStyle = 'DropDownList'
+$cmbVerfahren.Size = New-Object System.Drawing.Size(90, 22)
+$cmbVerfahren.Location = New-Object System.Drawing.Point(580, 132)
+$cmbVerfahren.Items.AddRange(@('Auto','Direkt','Umweg')) | Out-Null
+$cmbVerfahren.SelectedIndex = 0
+$pnlConn.Controls.Add($cmbVerfahren)
+
+$lblScenario = New-Object System.Windows.Forms.Label
+$lblScenario.Font = $fntSmall; $lblScenario.ForeColor = $clrSubText; $lblScenario.AutoSize = $true
+$lblScenario.Location = New-Object System.Drawing.Point(680, 135)
+$lblScenario.Text = 'Verfahren noch nicht geprueft'
+$pnlConn.Controls.Add($lblScenario)
+
+$btnCheck.Add_Click({
+    $other = $txtOther.Text.Trim()
+    if (-not $other) {
+        $lblScenario.Text = 'Bitte Gegenstelle angeben'
+        $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(255,193,7)
+        return
+    }
+    $lblScenario.Text = 'Pruefe...'; $lblScenario.ForeColor = $clrSubText
+    $reach = Test-ServerReachable -ServerInstance $other -TimeoutMs 3000
+    if ($reach) {
+        $lblScenario.Text = "[OK] $other erreichbar -> DIREKT moeglich"
+        $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(40,167,69)
+    } else {
+        $lblScenario.Text = "[!] $other nicht erreichbar -> UMWEG (zweistufig)"
+        $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(255,140,0)
+    }
+})
+
 # pnlConn Standardhoehe anpassen
-$pnlConn.Height = 140
+$pnlConn.Height = 165
 
 # --- Globale Auswahl-Leiste (alle Tabs) ---
 $pnlGlobalSel           = New-Object System.Windows.Forms.Panel
@@ -1329,19 +1393,29 @@ $btnMigrate.Add_Click({
         $migChks[$kv.Key] = $kv.Value.Checked
     }
 
-    # Szenario ermitteln (nur Quell-Modus; Ziel-Modus ist immer Phase2)
+    # Verfahren ermitteln: Auto = anhand Erreichbarkeit der Gegenstelle.
+    # Direkt nur sinnvoll im Quell-Modus mit angegebenem, erreichbarem Zielserver.
+    $script:OtherServer = $txtOther.Text.Trim()
+    $verfahren = $cmbVerfahren.SelectedItem
     $scenario = 'TwoPhase'
     if ($script:ActiveRole -eq 'Source') {
-        $tgtSrvName = if ($script:LoadedState) { $script:LoadedState.TargetServer } else { '' }
-        if ($tgtSrvName) {
-            $scenario = Get-MigrationScenario `
-                -TargetServerInstance $tgtSrvName `
-                -ExchangePath $exPath `
-                -UncTimeout $Config.UncAccessTestTimeoutSec
+        switch ($verfahren) {
+            'Direkt' { $scenario = 'Direct' }
+            'Umweg'  { $scenario = 'TwoPhase' }
+            default  {
+                if ($script:OtherServer -and (Test-ServerReachable -ServerInstance $script:OtherServer -TimeoutMs 3000)) {
+                    $scenario = 'Direct'
+                } else { $scenario = 'TwoPhase' }
+            }
         }
-        # Kein Zielserver bekannt -> immer TwoPhase
+        if ($scenario -eq 'Direct' -and -not $script:OtherServer) {
+            [System.Windows.Forms.MessageBox]::Show(
+                'Direkt-Verfahren benoetigt einen Zielserver (Gegenstelle).','Hinweis','OK','Warning') | Out-Null
+            return
+        }
     }
-    $script:Scenario = $scenario
+    $script:Scenario     = $scenario
+    $script:_DirectTrust = $chkTrust.Checked
 
     # Zusammenfassung
     $phaseInfo = if ($script:ActiveRole -eq 'Source') {
@@ -1382,9 +1456,29 @@ $btnMigrate.Add_Click({
 
     Invoke-BackgroundJob -ScriptBlock {
         param($srv, $role, $dbs, $exPath, $lPath, $method, $detach,
-              $reatt, $whatif, $chks, $scenario, $loadedState, $cfg)
+              $reatt, $whatif, $chks, $scenario, $loadedState, $cfg,
+              $otherSrv, $otherTrust)
 
         $done = 0
+
+        # ================================================================
+        # DIREKT-MODUS (beide Server sichtbar, ein Durchlauf)
+        # ================================================================
+        if ($role -eq 'Source' -and $scenario -eq 'Direct' -and $otherSrv) {
+            $sqlLoginsPresent = $false
+            if ($chks['Logins']) { try { $sqlLoginsPresent = Test-SourceHasSqlLogins -SourceServer $srv } catch { } }
+
+            $tgtConn = New-SqlConnection -ServerInstance $otherSrv -AuthMode 'Windows' `
+                -ConnectTimeout $cfg.ConnectionTimeout -TrustServerCertificate $otherTrust
+            $tgtConn = if ($tgtConn -is [array]) { $tgtConn[0] } else { $tgtConn }
+
+            Invoke-DirectMigration -SourceServer $srv -TargetServer $tgtConn -Databases $dbs `
+                -Objects $chks -ExchangePath $exPath -LocalBackupPath $lPath -Method $method `
+                -SqlLoginsPresent $sqlLoginsPresent -WhatIf:$whatif
+
+            Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direkt-Migration: Durchlauf beendet."
+            return $done
+        }
 
         # ================================================================
         # QUELL-MODUS (Phase 1)
@@ -1616,7 +1710,8 @@ $btnMigrate.Add_Click({
     } -ArgumentList @(
         $srcSrv, $activeRole, $selDbs, $exPath, $lPath, $method,
         ($cmbMethod.SelectedIndex -eq 1), $reattach, $whatif, $migChks,
-        $script:Scenario, $loadedState, $cfgRef
+        $script:Scenario, $loadedState, $cfgRef,
+        $script:OtherServer, $script:_DirectTrust
     ) -OnComplete {
         param($r)
         $btnMigrate.Invoke([Action]{ $btnMigrate.Enabled = $true })
