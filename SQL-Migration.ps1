@@ -766,6 +766,17 @@ $btnCheck.Add_Click({
     if ($reach) {
         $lblScenario.Text = "[OK] $other erreichbar -> DIREKT moeglich"
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(40,167,69)
+        # Exchange-Pfad automatisch auf das Backup-Verzeichnis des Ziels setzen
+        # (Admin-Freigabe, z.B. \\SERVER\D$\MSSQL\Backup) - nur im Quell-Modus.
+        if ($script:ActiveRole -eq 'Source') {
+            try {
+                $unc = Get-TargetBackupUncPath -ServerInstance $other -TrustServerCertificate:$chkTrust.Checked
+                if ($unc) {
+                    $txtExPath.Text = $unc
+                    $lblScenario.Text = "[OK] $other erreichbar -> DIREKT; Exchange-Pfad gesetzt"
+                }
+            } catch { }
+        }
     } else {
         $lblScenario.Text = "[!] $other nicht erreichbar -> UMWEG (zweistufig)"
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(255,140,0)

@@ -52,6 +52,38 @@ function Get-ServerBackupDirectory {
 }
 
 # ---------------------------------------------------------------------------
+# Backup-Verzeichnis des Zielservers als Admin-Freigabe-UNC ermitteln.
+# z.B. lokal 'D:\MSSQL\Backup' -> '\\SERVER\D$\MSSQL\Backup'
+# ---------------------------------------------------------------------------
+function Get-TargetBackupUncPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ServerInstance,
+        [switch]$TrustServerCertificate
+    )
+    try {
+        $conn = Connect-DbaInstance -SqlInstance $ServerInstance -TrustServerCertificate:$TrustServerCertificate -ErrorAction Stop
+        $bdir = (Get-DbaDefaultPath -SqlInstance $conn).Backup
+        if (-not $bdir) { return $null }
+        $hostName = ($ServerInstance -split '\\')[0].Split(',')[0].Trim()
+        if ($bdir -match '^[A-Za-z]:\\') {
+            $drive = $bdir.Substring(0, 1)
+            $rest  = $bdir.Substring(2).TrimStart('\')
+            $unc   = "\\$hostName\$drive`$\$rest"
+            Write-MigrationLog -Level 'INFO' -Category 'PATH' -Message "Ziel-Backup-Pfad ermittelt" -Detail $unc
+            return $unc
+        }
+        # Bereits UNC oder Sonderfall -> unveraendert zurueck
+        return $bdir
+    }
+    catch {
+        Write-MigrationLog -Level 'WARN' -Category 'PATH' `
+            -Message "Ziel-Backup-Pfad nicht ermittelbar" -Detail $_.Exception.Message
+        return $null
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Interner Helfer: eine Datei robust per robocopy kopieren (Admin-Kontext).
 # robocopy ExitCodes < 8 = Erfolg, >= 8 = Fehler.
 # ---------------------------------------------------------------------------
@@ -1097,6 +1129,7 @@ Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
                                Export-MigrationLinkedServers,
                                Export-MigrationCredentials,
                                Invoke-DirectMigration,
+                               Get-TargetBackupUncPath,
                                Invoke-LoginMigration,
                                Invoke-LinkedServerMigration,
                                Invoke-AgentJobMigration,
