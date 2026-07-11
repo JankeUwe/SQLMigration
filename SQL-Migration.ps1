@@ -1043,7 +1043,8 @@ $btnConnect.Add_Click({
 
     Invoke-BackgroundJob -ScriptBlock {
         param($srv, $auth, $user, $pwdSS, $timeout, $trust)
-        $p = @{ ServerInstance=$srv; AuthMode=$auth; ConnectTimeout=$timeout
+        $authMode = if ($auth -eq 'SQL-Login') { 'SqlLogin' } else { $auth }
+        $p = @{ ServerInstance=$srv; AuthMode=$authMode; ConnectTimeout=$timeout
                 TrustServerCertificate=$trust }
         if ($auth -eq 'SQL-Login') { $p['SqlUser']=$user; $p['SqlPassword']=$pwdSS }
         New-SqlConnection @p
