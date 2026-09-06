@@ -79,7 +79,7 @@ Die `migration.config.json` steuert:
 
 ## Mehr Informationen
 
-- **Dokumentation:** [powershelldba.de/tools/sql-migrations-automation](https://www.powershelldba.de/tools/sql-migrations-automation)
+- **Dokumentation:** [powershelldba.de/sqlmigration](https://www.powershelldba.de/sqlmigration/)
 - **Website:** [www.powershelldba.de](https://www.powershelldba.de)
 - **PowerShell Gallery:** [powershellgallery.com/profiles/JankeUwe](https://www.powershellgallery.com/profiles/JankeUwe)
 - **Alle Projekte:** [github.com/JankeUwe](https://github.com/JankeUwe)
