@@ -1148,6 +1148,7 @@ function Invoke-DirectDatabaseTransfer {
                 }
                 $srcDirAccess = Resolve-ServerPathForAccess -ServerInstance $SourceServer.Name -Path $srcDir
                 Ensure-LocalBackupPath -Path $srcDirAccess
+                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Backup auf Quelle startet: $dbName" -Detail $srcDir
                 $bp = Backup-DbaDatabase -SqlInstance $SourceServer -Database $dbName `
                     -BackupDirectory $srcDir -CompressBackup:$WithCompression.IsPresent -CopyOnly:$CopyOnly.IsPresent -ErrorAction Stop
                 $srcFile = $bp.BackupPath
@@ -1155,11 +1156,14 @@ function Invoke-DirectDatabaseTransfer {
 
                 # robocopy Quelle-lokal -> Ziel-Admin-Freigabe
                 $srcFileAccess = Resolve-ServerPathForAccess -ServerInstance $SourceServer.Name -Path $srcFile
+                $sizeGb = try { [math]::Round((Get-Item -LiteralPath $srcFileAccess -ErrorAction Stop).Length / 1GB, 2) } catch { '?' }
+                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Kopiere Backup zum Ziel ($sizeGb GB, kann dauern): $dbName" -Detail "$srcFileAccess -> $tgtUnc"
                 $null = Copy-FileRobocopy -SourceFile $srcFileAccess -DestDir $tgtUnc
                 $tgtLocalFile = Join-Path $tgtLocal (Split-Path $srcFile -Leaf)
                 Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "Backup ans Ziel kopiert" -Detail $tgtLocalFile
 
                 # Restore am Ziel aus dessen LOKALEM Pfad
+                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Restore auf Ziel startet: $dbName" -Detail $tgtLocalFile
                 $null = Restore-DbaDatabase -SqlInstance $TargetServer -Path $tgtLocalFile `
                     -DatabaseName $dbName -WithReplace -ErrorAction Stop
                 Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Restore (Ziel) OK: $dbName"

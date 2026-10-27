@@ -420,6 +420,21 @@ Import-Module '$modulePath\Invoke-Migration.psm1'        -Force
         $ctx = $script:_JobContexts[$key]
         if (-not $ctx) { $this.Stop(); $this.Dispose(); return }
 
+        if (-not $ctx.Handle.IsCompleted) {
+            # Laufender Job: letzte Logzeile als Fortschritt in der Statuszeile zeigen
+            try {
+                $lf = Get-MigrationLogPath
+                if ($lf -and $script:statusLabel) {
+                    $fs = [System.IO.File]::Open($lf, 'Open', 'Read', 'ReadWrite')
+                    $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+                    $last = ''
+                    while (-not $sr.EndOfStream) { $l = $sr.ReadLine(); if ($l.Trim()) { $last = $l } }
+                    $sr.Dispose(); $fs.Dispose()
+                    if ($last) { $script:statusLabel.Text = ($last -replace '\s{2,}', ' ') }
+                }
+            } catch { }
+            return
+        }
         if ($ctx.Handle.IsCompleted) {
             $this.Stop()
             $this.Dispose()
