@@ -70,8 +70,17 @@ function Write-MigrationLog {
     Write-Host $line -ForegroundColor $color
 }
 
+# Logpfade aus einem anderen Runspace uebernehmen (Hintergrund-Jobs laden das
+# Modul neu; ohne das waeren LogFile/CsvFile dort $null und nichts wuerde geloggt).
+function Set-MigrationLogPath {
+    param([string]$LogFile, [string]$CsvFile)
+    $script:LogFile = $LogFile
+    $script:CsvFile = $CsvFile
+}
+
 function Get-MigrationLogPath { return $script:LogFile }
 function Get-MigrationCsvPath { return $script:CsvFile }
 
 Export-ModuleMember -Function Initialize-MigrationLog, Write-MigrationLog,
-                               Get-MigrationLogPath, Get-MigrationCsvPath
+                               Get-MigrationLogPath, Get-MigrationCsvPath,
+                               Set-MigrationLogPath

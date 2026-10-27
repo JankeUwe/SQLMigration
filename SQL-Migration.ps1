@@ -110,14 +110,14 @@ $script:LoadedState    = $null    # Zustandsdatei (im Ziel-Modus)
 # FARBEN & SCHRIFTEN
 # ===========================================================================
 $clrBg        = [System.Drawing.Color]::FromArgb(24, 26, 32)
-$clrPanel     = [System.Drawing.Color]::FromArgb(33, 37, 43)
-$clrBorder    = [System.Drawing.Color]::FromArgb(52, 58, 70)
+$clrPanel     = [System.Drawing.Color]::FromArgb(40, 45, 54)
+$clrBorder    = [System.Drawing.Color]::FromArgb(85, 94, 110)
 $clrAccent    = [System.Drawing.Color]::FromArgb(0, 120, 215)
 $clrAccentGrn = [System.Drawing.Color]::FromArgb(40, 167, 69)
 $clrAccentAmb = [System.Drawing.Color]::FromArgb(255, 140, 0)
-$clrText      = [System.Drawing.Color]::FromArgb(220, 225, 235)
-$clrSubText   = [System.Drawing.Color]::FromArgb(140, 150, 165)
-$clrInput     = [System.Drawing.Color]::FromArgb(40, 44, 52)
+$clrText      = [System.Drawing.Color]::FromArgb(245, 247, 250)
+$clrSubText   = [System.Drawing.Color]::FromArgb(195, 203, 216)
+$clrInput     = [System.Drawing.Color]::FromArgb(52, 58, 70)
 $clrHeader    = [System.Drawing.Color]::FromArgb(15, 17, 22)
 
 $fntTitle   = New-Object System.Drawing.Font('Consolas', 12, [System.Drawing.FontStyle]::Bold)
@@ -387,6 +387,7 @@ Set-StrictMode -Off
 `$ErrorActionPreference = 'Continue'
 Import-Module dbaTools -ErrorAction SilentlyContinue
 Import-Module '$modulePath\Write-MigrationLog.psm1'     -Force
+Set-MigrationLogPath -LogFile '$(Get-MigrationLogPath)' -CsvFile '$(Get-MigrationCsvPath)'
 Import-Module '$modulePath\Connect-SqlServer.psm1'       -Force
 Import-Module '$modulePath\Get-SqlObjects.psm1'          -Force
 Import-Module '$modulePath\Invoke-MigrationState.psm1'   -Force

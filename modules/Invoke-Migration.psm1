@@ -178,8 +178,8 @@ function Invoke-DatabaseMigrationBackupRestore {
                         -SqlInstance      $SourceServer `
                         -Database         $dbName `
                         -BackupDirectory  $localDir `
-                        -CompressBackup   $WithCompression.IsPresent `
-                        -CopyOnly         $CopyOnly.IsPresent `
+                        -CompressBackup:$WithCompression.IsPresent `
+                        -CopyOnly:$CopyOnly.IsPresent `
                         -ErrorAction      Stop
                     $localFile = $bpResult.BackupPath
                     $stepResult.BackupOK = $true
@@ -1130,7 +1130,7 @@ function Invoke-DirectDatabaseTransfer {
                 }
                 Ensure-LocalBackupPath -Path $srcDir
                 $bp = Backup-DbaDatabase -SqlInstance $SourceServer -Database $dbName `
-                    -BackupDirectory $srcDir -CompressBackup $WithCompression.IsPresent -CopyOnly $CopyOnly.IsPresent -ErrorAction Stop
+                    -BackupDirectory $srcDir -CompressBackup:$WithCompression.IsPresent -CopyOnly:$CopyOnly.IsPresent -ErrorAction Stop
                 $srcFile = $bp.BackupPath
                 Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Backup (Quelle, lokal) OK: $dbName" -Detail $srcFile
 
