@@ -141,6 +141,13 @@ function Copy-FileRobocopy {
     if (-not (Test-Path $DestDir)) {
         New-Item -ItemType Directory -Path $DestDir -Force -ErrorAction Stop | Out-Null
     }
+    # Ziel schon vorhanden und gleich gross: nicht erneut kopieren
+    $existing = Join-Path $DestDir $name
+    if ((Test-Path -LiteralPath $existing) -and
+        ((Get-Item -LiteralPath $existing).Length -eq (Get-Item -LiteralPath $SourceFile).Length)) {
+        Write-MigrationLog -Level 'INFO' -Category 'COPY' -Message "Datei liegt bereits am Ziel (gleiche Groesse) - Kopie uebersprungen" -Detail $existing
+        return $existing
+    }
     $rcOut = @(robocopy $srcDir $DestDir $name /R:2 /W:3 /NP /NJH /NJS /NDL /COPY:DAT 2>&1)
     $code = $LASTEXITCODE
     if ($code -ge 8) {
