@@ -1502,7 +1502,8 @@ $btnMigrate.Add_Click({
 
             Invoke-DirectMigration -SourceServer $srv -TargetServer $tgtConn -Databases $dbs `
                 -Objects $chks -ExchangePath $exPath -LocalBackupPath $lPath -Method $method `
-                -SqlLoginsPresent $sqlLoginsPresent -WhatIf:$whatif
+                -SqlLoginsPresent $sqlLoginsPresent `
+                -WithCompression:($cfg.BackupCompression) -CopyOnly:($cfg.CopyOnlyBackup) -WhatIf:$whatif
 
             Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direkt-Migration: Durchlauf beendet."
             return $done

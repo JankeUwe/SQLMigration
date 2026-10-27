@@ -112,6 +112,22 @@ function Get-TargetBackupUncPath {
 }
 
 # ---------------------------------------------------------------------------
+# Freien Speicher eines (UNC-)Pfads in Bytes (GetDiskFreeSpaceEx), $null bei Fehler.
+# ---------------------------------------------------------------------------
+function Get-PathFreeBytes {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not ('SqmMig.Disk' -as [type])) {
+        Add-Type -Namespace SqmMig -Name Disk -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+public static extern bool GetDiskFreeSpaceEx(string dir, out ulong avail, out ulong total, out ulong free);
+'@
+    }
+    [uint64]$a = 0; [uint64]$t = 0; [uint64]$f = 0
+    if ([SqmMig.Disk]::GetDiskFreeSpaceEx($Path, [ref]$a, [ref]$t, [ref]$f)) { return [double]$a }
+    return $null
+}
+
+# ---------------------------------------------------------------------------
 # Interner Helfer: eine Datei robust per robocopy kopieren (Admin-Kontext).
 # robocopy ExitCodes < 8 = Erfolg, >= 8 = Fehler.
 # ---------------------------------------------------------------------------
@@ -125,10 +141,11 @@ function Copy-FileRobocopy {
     if (-not (Test-Path $DestDir)) {
         New-Item -ItemType Directory -Path $DestDir -Force -ErrorAction Stop | Out-Null
     }
-    $null = robocopy $srcDir $DestDir $name /R:2 /W:3 /NP /NJH /NJS /NDL /COPY:DAT
+    $rcOut = @(robocopy $srcDir $DestDir $name /R:2 /W:3 /NP /NJH /NJS /NDL /COPY:DAT 2>&1)
     $code = $LASTEXITCODE
     if ($code -ge 8) {
-        throw "robocopy fehlgeschlagen (ExitCode $code): '$name' -> '$DestDir'"
+        $tail = (($rcOut | ForEach-Object { "$_".Trim() } | Where-Object { $_ }) | Select-Object -Last 6) -join ' | '
+        throw "robocopy fehlgeschlagen (ExitCode $code): '$name' -> '$DestDir'. robocopy: $tail"
     }
     $dest = Join-Path $DestDir $name
     if (-not (Test-Path $dest)) {
@@ -616,10 +633,14 @@ function Invoke-LoginMigration {
         if ($WhatIf)   { $params['WhatIf']   = $true }
 
         $result = Copy-DbaLogin @params
-        $ok  = ($result | Where-Object { $_.Status -eq 'Successful' }).Count
-        $err = ($result | Where-Object { $_.Status -ne 'Successful' }).Count
+        $ok  = @($result | Where-Object { $_.Status -eq 'Successful' }).Count
+        $err = @($result | Where-Object { $_.Status -ne 'Successful' }).Count
+        $byStatus = (@($result | Group-Object Status | ForEach-Object { "$($_.Name)=$($_.Count)" })) -join ', '
         Write-MigrationLog -Level 'SUCCESS' -Category 'LOGIN' `
-            -Message "Login-Migration abgeschlossen" -Detail "OK: $ok | Fehler: $err"
+            -Message "Login-Migration abgeschlossen" -Detail "OK: $ok | Nicht erfolgreich: $err | Status: $byStatus"
+        foreach ($bad in @($result | Where-Object { $_.Status -ne 'Successful' } | Select-Object -First 5)) {
+            Write-MigrationLog -Level 'WARN' -Category 'LOGIN' -Message "Login $($bad.Name): $($bad.Status)" -Detail "$($bad.Notes)"
+        }
         return $result
     }
     catch {
@@ -1147,6 +1168,25 @@ function Invoke-DirectDatabaseTransfer {
                     continue
                 }
                 $srcDirAccess = Resolve-ServerPathForAccess -ServerInstance $SourceServer.Name -Path $srcDir
+
+                # Preflight VOR dem (langen) Backup: Ziel beschreibbar? Platz reicht?
+                if (-not (Test-Path $tgtUnc)) { New-Item -ItemType Directory -Path $tgtUnc -Force -ErrorAction Stop | Out-Null }
+                $probe = Join-Path $tgtUnc ('_sqlmig_write_test_{0}.tmp' -f [guid]::NewGuid().ToString('N'))
+                try { Set-Content -Path $probe -Value 'x' -ErrorAction Stop; Remove-Item $probe -Force -ErrorAction SilentlyContinue }
+                catch { throw "Ziel '$tgtUnc' nicht beschreibbar fuer den Benutzer des Tools: $($_.Exception.Message)" }
+                $dbInfo   = Get-DbaDatabase -SqlInstance $SourceServer -Database $dbName -ErrorAction Stop
+                $usedBytes = [math]::Max(0, ([double]$dbInfo.Size * 1MB) - ([double]$dbInfo.SpaceAvailable * 1KB))
+                $freeBytes = Get-PathFreeBytes -Path $tgtUnc
+                $usedGb = [math]::Round($usedBytes / 1GB, 1)
+                $freeGb = if ($null -ne $freeBytes) { [math]::Round($freeBytes / 1GB, 1) } else { '?' }
+                Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "Preflight Ziel: frei $freeGb GB, DB belegt ca. $usedGb GB (Komprimierung: $($WithCompression.IsPresent))" -Detail $tgtUnc
+                if ($null -ne $freeBytes -and $freeBytes -lt $usedBytes) {
+                    if ($WithCompression) {
+                        Write-MigrationLog -Level 'WARN' -Category 'DIRECT-DB' -Message "Wenig Platz am Ziel, Backup ist komprimiert - es kann trotzdem reichen"
+                    } else {
+                        throw "Zu wenig Platz am Ziel '$tgtUnc': frei $freeGb GB, benoetigt ca. $usedGb GB (unkomprimiert). Backup wird nicht gestartet."
+                    }
+                }
                 Ensure-LocalBackupPath -Path $srcDirAccess
                 Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Backup auf Quelle startet: $dbName" -Detail $srcDir
                 $bp = Backup-DbaDatabase -SqlInstance $SourceServer -Database $dbName `
@@ -1191,6 +1231,8 @@ function Invoke-DirectMigration {
         [string]$LocalBackupPath  = 'F:\Daten\SQL\Backup',
         [string]$Method           = 'BackupRestore',
         [bool]$SqlLoginsPresent   = $false,
+        [switch]$WithCompression,
+        [switch]$CopyOnly,
         [switch]$WhatIf
     )
     Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direkt-Migration gestartet (ein Durchlauf)"
@@ -1198,7 +1240,8 @@ function Invoke-DirectMigration {
     # 1. Datenbanken: Quelle lokal sichern/detachen, Ziel ueber Admin-Freigabe-UNC
     if ($Objects['Datenbanken'] -and $Databases.Count -gt 0) {
         Invoke-DirectDatabaseTransfer -SourceServer $SourceServer -TargetServer $TargetServer `
-            -Databases $Databases -LocalBackupPath $LocalBackupPath -Method $Method -WhatIf:$WhatIf
+            -Databases $Databases -LocalBackupPath $LocalBackupPath -Method $Method `
+            -WithCompression:$WithCompression -CopyOnly:$CopyOnly -WhatIf:$WhatIf
         Invoke-PostRestoreCleanup -TargetServer $TargetServer -Databases $Databases -WhatIf:$WhatIf
     }
 
