@@ -71,6 +71,22 @@ function ConvertTo-AdminShareUnc {
 }
 
 # ---------------------------------------------------------------------------
+# Pfad, der auf dem SQL-Server gilt (z.B. 'V:\Backup'), fuer den Zugriff vom
+# Rechner aus machen, auf dem das Tool laeuft: lokal unveraendert, sonst
+# Admin-Freigabe-UNC (sonst: "Cannot find drive 'V'").
+# ---------------------------------------------------------------------------
+function Resolve-ServerPathForAccess {
+    param(
+        [Parameter(Mandatory)][string]$ServerInstance,
+        [Parameter(Mandatory)][string]$Path
+    )
+    $hostName = ($ServerInstance -split '\\')[0].Split(',')[0].Trim()
+    $short    = ($hostName -split '\.')[0]
+    if ($short -in @($env:COMPUTERNAME, 'localhost', '.', '(local)')) { return $Path }
+    return ConvertTo-AdminShareUnc -ComputerName $hostName -LocalPath $Path
+}
+
+# ---------------------------------------------------------------------------
 # Backup-Verzeichnis des Zielservers als Admin-Freigabe-UNC ermitteln.
 # z.B. lokal 'D:\MSSQL\Backup' -> '\\SERVER\D$\MSSQL\Backup'
 # ---------------------------------------------------------------------------
@@ -595,7 +611,8 @@ function Invoke-LoginMigration {
     try {
         $params = @{ Source = $SourceServer; Destination = $TargetServer; ErrorAction = 'Stop' }
         if ($Logins)   { $params['Login']    = $Logins }
-        if ($SyncSids) { $params['SyncSids'] = $true }
+        # Copy-DbaLogin uebernimmt SIDs standardmaessig (nur -NewSid erzeugt neue);
+        # -SyncSids existiert dort nicht. $SyncSids bleibt als Schalter nur der Kompatibilitaet halber.
         if ($WhatIf)   { $params['WhatIf']   = $true }
 
         $result = Copy-DbaLogin @params
@@ -1111,7 +1128,8 @@ function Invoke-DirectDatabaseTransfer {
                     $isLog    = $f -match '\.ldf$'
                     $destUnc  = if ($isLog) { $tgtLogU } else { $tgtDataU }
                     $destLoc  = if ($isLog) { $tgtLogL } else { $tgtDataL }
-                    $null     = Copy-FileRobocopy -SourceFile $f -DestDir $destUnc
+                    $fAccess  = Resolve-ServerPathForAccess -ServerInstance $SourceServer.Name -Path $f
+                    $null     = Copy-FileRobocopy -SourceFile $fAccess -DestDir $destUnc
                     $tgtLocalFiles.Add((Join-Path $destLoc (Split-Path $f -Leaf)))
                 }
                 $attach = Build-AttachQuery -DbName $dbName -Files $tgtLocalFiles.ToArray()
@@ -1128,14 +1146,16 @@ function Invoke-DirectDatabaseTransfer {
                     Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "[WHATIF] Backup/Restore direkt: $dbName ($srcDir -> $tgtUnc)"
                     continue
                 }
-                Ensure-LocalBackupPath -Path $srcDir
+                $srcDirAccess = Resolve-ServerPathForAccess -ServerInstance $SourceServer.Name -Path $srcDir
+                Ensure-LocalBackupPath -Path $srcDirAccess
                 $bp = Backup-DbaDatabase -SqlInstance $SourceServer -Database $dbName `
                     -BackupDirectory $srcDir -CompressBackup:$WithCompression.IsPresent -CopyOnly:$CopyOnly.IsPresent -ErrorAction Stop
                 $srcFile = $bp.BackupPath
                 Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Backup (Quelle, lokal) OK: $dbName" -Detail $srcFile
 
                 # robocopy Quelle-lokal -> Ziel-Admin-Freigabe
-                $null = Copy-FileRobocopy -SourceFile $srcFile -DestDir $tgtUnc
+                $srcFileAccess = Resolve-ServerPathForAccess -ServerInstance $SourceServer.Name -Path $srcFile
+                $null = Copy-FileRobocopy -SourceFile $srcFileAccess -DestDir $tgtUnc
                 $tgtLocalFile = Join-Path $tgtLocal (Split-Path $srcFile -Leaf)
                 Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "Backup ans Ziel kopiert" -Detail $tgtLocalFile
 
