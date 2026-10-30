@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Final step passes the target's SQL-Login on to sqmSQLTool; Test-SqlConnection now really connects (Test-DbaConnection reported False for working SQL logins)
 - Direct procedure: title and start button no longer say "Phase 1" (now "Migration: Backup + Restore"); the button shows "Migration fertig" after the run
 - Live backup/restore progress in the GUI: percent, database and remaining minutes of running BACKUP/RESTORE statements on source and (Direct) target, polled every ~2 s from sys.dm_exec_requests, shown next to the progress bar
+- Copy progress: while a backup file is copied to the target, the GUI shows "[Kopie] file NN % (x / y GB, MB/s, remaining minutes)"; the percentage comes from robocopy's own output (the destination file size is useless, robocopy preallocates it)
 
 ## [1.2.0.0] - 2026-06-21
 

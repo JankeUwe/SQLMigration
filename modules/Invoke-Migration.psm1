@@ -151,8 +151,46 @@ function Copy-FileRobocopy {
         Write-MigrationLog -Level 'INFO' -Category 'COPY' -Message "Datei liegt bereits am Ziel (gleiche Groesse) - Kopie uebersprungen" -Detail $existing
         return $existing
     }
-    $rcOut = @(robocopy $srcDir $DestDir $name /R:2 /W:3 /NP /NJH /NJS /NDL /COPY:DAT 2>&1)
-    $code = $LASTEXITCODE
+    # robocopy mit umgeleiteter Ausgabe starten und den Prozentwert aus dessen Ausgabe lesen
+    # (die Zieldatei waere als Mass ungeeignet: robocopy legt sie in voller Groesse vorab an).
+    # Der Stand liegt im AppDomain-Slot 'SQLMigration.CopyProgress', den die GUI ausliest
+    # (Runspaces teilen sich die AppDomain).
+    $total = (Get-Item -LiteralPath $SourceFile).Length
+    $slot  = 'SQLMigration.CopyProgress'
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName  = 'robocopy'
+    $psi.Arguments = '"{0}" "{1}" "{2}" /R:2 /W:3 /NJH /NJS /NDL /COPY:DAT' -f $srcDir.TrimEnd('\'), $DestDir.TrimEnd('\'), $name
+    $psi.UseShellExecute        = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.CreateNoWindow         = $true
+    $rcText = ''
+    $code   = 1
+    try {
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $buf  = New-Object char[] 512
+        $lastSet = [DateTime]::MinValue
+        while (($n = $proc.StandardOutput.Read($buf, 0, $buf.Length)) -gt 0) {
+            $chunk = New-Object string($buf, 0, $n)
+            $rcText = ($rcText + $chunk)
+            if ($rcText.Length -gt 4000) { $rcText = $rcText.Substring($rcText.Length - 4000) }
+            $now = [DateTime]::UtcNow
+            if (($now - $lastSet).TotalMilliseconds -ge 1000) {
+                $m = [regex]::Matches($rcText, '(\d+)(?:[.,]\d+)?%')
+                if ($m.Count -gt 0) {
+                    $pct = [math]::Min(100, [int]$m[$m.Count - 1].Groups[1].Value)
+                    [AppDomain]::CurrentDomain.SetData($slot, [pscustomobject]@{
+                        File = $name; Bytes = [long]($total * $pct / 100.0); Total = [long]$total; Stamp = $now })
+                    $lastSet = $now
+                }
+            }
+        }
+        $proc.WaitForExit()
+        $code = $proc.ExitCode
+    }
+    finally {
+        [AppDomain]::CurrentDomain.SetData($slot, $null)
+    }
+    $rcOut = @($rcText -split "[`r`n]+")
     if ($code -ge 8) {
         $tail = (($rcOut | ForEach-Object { "$_".Trim() } | Where-Object { $_ }) | Select-Object -Last 6) -join ' | '
         throw "robocopy fehlgeschlagen (ExitCode $code): '$name' -> '$DestDir'. robocopy: $tail"

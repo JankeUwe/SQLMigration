@@ -302,11 +302,34 @@ function Update-OperationProgress {
     if (-not $script:ProgTargets -or $script:ProgTargets.Count -eq 0) { return }
     $ops = @()
     foreach ($t in $script:ProgTargets) { $ops += Get-SqlOpProgress -T $t }
+
+    # Backup-Datei wird gerade zum Ziel kopiert (robocopy, Stand aus dem Migrations-Runspace)
+    $cp = [AppDomain]::CurrentDomain.GetData('SQLMigration.CopyProgress')
+    if ($cp -and $cp.Total -gt 0) {
+        $pct = [int][math]::Floor(100.0 * $cp.Bytes / $cp.Total)
+        $speed = ''; $eta = ''
+        $prev = $script:CopyPrev
+        if ($prev -and $prev.File -eq $cp.File -and $cp.Stamp -gt $prev.Stamp -and $cp.Bytes -ge $prev.Bytes) {
+            $bps = ($cp.Bytes - $prev.Bytes) / ($cp.Stamp - $prev.Stamp).TotalSeconds
+            if ($bps -gt 0) {
+                $speed = ', {0:N0} MB/s' -f ($bps / 1MB)
+                $min = [math]::Ceiling((($cp.Total - $cp.Bytes) / $bps) / 60)
+                if ($min -gt 0) { $eta = ", noch ca. $min min" }
+            }
+        }
+        $script:CopyPrev = $cp
+        $ops += [pscustomobject]@{
+            Label = 'Kopie'; Command = 'KOPIERE'; Database = $cp.File; Percent = $pct; EtaMin = 0
+            Extra = ('{0:N1} / {1:N1} GB{2}{3}' -f ($cp.Bytes / 1GB), ($cp.Total / 1GB), $speed, $eta)
+        }
+    } else { $script:CopyPrev = $null }
+
     if ($ops.Count -gt 0) {
         $txt = ($ops | ForEach-Object {
             $eta = if ($_.EtaMin -gt 0) { ", noch ca. $($_.EtaMin) min" } else { '' }
             $db  = if ($_.Database) { " $($_.Database)" } else { '' }
-            "[$($_.Label)] $($_.Command)$db $($_.Percent) %$eta"
+            $ex  = if ($_.PSObject.Properties['Extra'] -and $_.Extra) { " ($($_.Extra))" } else { '' }
+            "[$($_.Label)] $($_.Command)$db $($_.Percent) %$ex$eta"
         }) -join '   |   '
         $lblProgress.Text = $txt
         $progress.Value = [math]::Min(100, [math]::Max(0, ($ops | Measure-Object Percent -Maximum).Maximum))
@@ -316,6 +339,8 @@ function Update-OperationProgress {
 }
 
 function Stop-OperationProgress {
+    [AppDomain]::CurrentDomain.SetData('SQLMigration.CopyProgress', $null)
+    $script:CopyPrev = $null
     $script:ProgTargets = @()
     foreach ($c in @($script:ProgConns.Values)) { try { $c.Close(); $c.Dispose() } catch { } }
     $script:ProgConns = @{}
