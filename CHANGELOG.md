@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
   - New `Get-SqmSqlToolSource` checks for sqmSQLTool (loaded, installed, or source next to the tool); the start confirmation dialog and status bar warn up front if it is missing and the final step will run
   - Without sqmSQLTool: fallback to the previous cleanup (`Invoke-PostRestoreCleanup`), AG step skipped with a warning
 
+### GUI
+- Title bar now uses the role colour (blue = source, green = target); log path no longer overlaps the version label
+- Quellserver and Zielserver are two separate rows, always source on top; the connected server's row carries the Auth fields, the counterpart row carries "Verbindung pruefen" and Verfahren
+
 ## [1.2.0.0] - 2026-06-21
 
 ### Documentation

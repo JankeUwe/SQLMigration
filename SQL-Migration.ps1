@@ -529,13 +529,13 @@ $form.Font             = $fntNormal
 $pnlTitle           = New-Object System.Windows.Forms.Panel
 $pnlTitle.Dock      = 'Top'
 $pnlTitle.Height    = 50
-$pnlTitle.BackColor = $clrHeader
+$pnlTitle.BackColor = $roleColor
 $form.Controls.Add($pnlTitle)
 
 $lblTitle           = New-Object System.Windows.Forms.Label
 $lblTitle.Text      = ">>  SQL SERVER MIGRATION  -  $roleLabel"
 $lblTitle.Font      = $fntTitle
-$lblTitle.ForeColor = $roleColor
+$lblTitle.ForeColor = [System.Drawing.Color]::White
 $lblTitle.AutoSize  = $true
 $lblTitle.Location  = New-Object System.Drawing.Point(15, 13)
 $pnlTitle.Controls.Add($lblTitle)
@@ -543,18 +543,19 @@ $pnlTitle.Controls.Add($lblTitle)
 $lblVersion           = New-Object System.Windows.Forms.Label
 $lblVersion.Text      = 'PS ' + $PSVersionTable.PSVersion.ToString() + '  |  dbaTools'
 $lblVersion.Font      = $fntSmall
-$lblVersion.ForeColor = $clrSubText
+$lblVersion.ForeColor = [System.Drawing.Color]::FromArgb(230, 238, 248)
 $lblVersion.AutoSize  = $true
-$lblVersion.Location  = New-Object System.Drawing.Point(560, 17)
+$lblVersion.Location  = New-Object System.Drawing.Point(470, 17)
 $pnlTitle.Controls.Add($lblVersion)
 
 $lblLogPath           = New-Object System.Windows.Forms.Label
 $lblLogPath.Font      = $fntSmall
-$lblLogPath.ForeColor = $clrSubText
+$lblLogPath.ForeColor = [System.Drawing.Color]::FromArgb(230, 238, 248)
 $lblLogPath.AutoSize  = $false
 $lblLogPath.TextAlign = 'MiddleRight'
-$lblLogPath.Size      = New-Object System.Drawing.Size(300, 20)
-$lblLogPath.Location  = New-Object System.Drawing.Point(570, 15)
+$lblLogPath.Size      = New-Object System.Drawing.Size(700, 20)
+$lblLogPath.Anchor    = 'Top,Right'
+$lblLogPath.Location  = New-Object System.Drawing.Point(870, 15)
 $lblLogPath.Text      = 'Log: ' + (Get-MigrationLogPath)
 $pnlTitle.Controls.Add($lblLogPath)
 
@@ -612,17 +613,22 @@ $pnlHead.Controls.Add($lblConnState)
 # --- Verbindungs-Panel ---
 $pnlConn            = New-Object System.Windows.Forms.Panel
 $pnlConn.Dock       = 'Top'
-$pnlConn.Height     = 115
+$pnlConn.Height     = 135
 $pnlConn.BackColor  = $clrPanel
 $pnlConn.Padding    = New-Object System.Windows.Forms.Padding(8,6,8,6)
 $pnlMain.Controls.Add($pnlConn)
 
+# Zeile 1 = Quellserver, Zeile 2 = Zielserver (immer in dieser Reihenfolge).
+# Der verbundene Server ist je nach Rolle Zeile 1 (Quelle) oder Zeile 2 (Ziel).
+$rowActive = if ($script:ActiveRole -eq 'Source') { 8 } else { 38 }
+$rowOther  = if ($script:ActiveRole -eq 'Source') { 38 } else { 8 }
+
 $lblSrv             = New-Object System.Windows.Forms.Label
-$lblSrv.Text        = 'Server\Instanz:'
-$lblSrv.Font        = $fntSmall
-$lblSrv.ForeColor   = $clrSubText
+$lblSrv.Text        = if ($script:ActiveRole -eq 'Source') { 'Quellserver:' } else { 'Zielserver:' }
+$lblSrv.Font        = $fntBold
+$lblSrv.ForeColor   = $roleColor
 $lblSrv.AutoSize    = $true
-$lblSrv.Location    = New-Object System.Drawing.Point(8, 10)
+$lblSrv.Location    = New-Object System.Drawing.Point(8, ($rowActive + 3))
 $pnlConn.Controls.Add($lblSrv)
 
 $txtServer          = New-Object System.Windows.Forms.TextBox
@@ -630,8 +636,8 @@ $txtServer.Font     = $fntMono
 $txtServer.BackColor= $clrInput
 $txtServer.ForeColor= $clrText
 $txtServer.BorderStyle = 'FixedSingle'
-$txtServer.Size     = New-Object System.Drawing.Size(250, 22)
-$txtServer.Location = New-Object System.Drawing.Point(115, 7)
+$txtServer.Size     = New-Object System.Drawing.Size(260, 22)
+$txtServer.Location = New-Object System.Drawing.Point(95, $rowActive)
 # Standard: aktuellen Maschinennamen vorbelegen (lokale Instanz)
 $txtServer.Text = $env:COMPUTERNAME
 # Im Ziel-Modus: Zielserver aus Zustandsdatei vorbelegen (ueberschreibt Default)
@@ -645,7 +651,7 @@ $lblAuth.Text       = 'Auth:'
 $lblAuth.Font       = $fntSmall
 $lblAuth.ForeColor  = $clrSubText
 $lblAuth.AutoSize   = $true
-$lblAuth.Location   = New-Object System.Drawing.Point(380, 10)
+$lblAuth.Location   = New-Object System.Drawing.Point(390, ($rowActive + 3))
 $pnlConn.Controls.Add($lblAuth)
 
 $cmbAuth            = New-Object System.Windows.Forms.ComboBox
@@ -655,7 +661,7 @@ $cmbAuth.ForeColor  = $clrText
 $cmbAuth.FlatStyle  = 'Flat'
 $cmbAuth.DropDownStyle = 'DropDownList'
 $cmbAuth.Size       = New-Object System.Drawing.Size(110, 22)
-$cmbAuth.Location   = New-Object System.Drawing.Point(415, 7)
+$cmbAuth.Location   = New-Object System.Drawing.Point(425, $rowActive)
 $cmbAuth.Items.AddRange(@('Windows', 'SQL-Login')) | Out-Null
 $cmbAuth.SelectedIndex = 0
 $pnlConn.Controls.Add($cmbAuth)
@@ -663,33 +669,32 @@ $pnlConn.Controls.Add($cmbAuth)
 $lblUser = New-Object System.Windows.Forms.Label
 $lblUser.Text = 'Benutzer:'; $lblUser.Font = $fntSmall
 $lblUser.ForeColor = $clrSubText; $lblUser.AutoSize = $true
-$lblUser.Location = New-Object System.Drawing.Point(8, 40); $lblUser.Visible = $false
+$lblUser.Location = New-Object System.Drawing.Point(550, ($rowActive + 3)); $lblUser.Visible = $false
 $pnlConn.Controls.Add($lblUser)
 
 $txtUser = New-Object System.Windows.Forms.TextBox
 $txtUser.Font = $fntMono; $txtUser.BackColor = $clrInput; $txtUser.ForeColor = $clrText
 $txtUser.BorderStyle = 'FixedSingle'; $txtUser.Size = New-Object System.Drawing.Size(140, 22)
-$txtUser.Location = New-Object System.Drawing.Point(75, 37); $txtUser.Visible = $false
+$txtUser.Location = New-Object System.Drawing.Point(610, $rowActive); $txtUser.Visible = $false
 $pnlConn.Controls.Add($txtUser)
 
 $lblPwd = New-Object System.Windows.Forms.Label
 $lblPwd.Text = 'Passwort:'; $lblPwd.Font = $fntSmall
 $lblPwd.ForeColor = $clrSubText; $lblPwd.AutoSize = $true
-$lblPwd.Location = New-Object System.Drawing.Point(230, 40); $lblPwd.Visible = $false
+$lblPwd.Location = New-Object System.Drawing.Point(760, ($rowActive + 3)); $lblPwd.Visible = $false
 $pnlConn.Controls.Add($lblPwd)
 
 $txtPwd = New-Object System.Windows.Forms.TextBox
 $txtPwd.Font = $fntMono; $txtPwd.BackColor = $clrInput; $txtPwd.ForeColor = $clrText
 $txtPwd.BorderStyle = 'FixedSingle'; $txtPwd.PasswordChar = '*'
 $txtPwd.Size = New-Object System.Drawing.Size(140, 22)
-$txtPwd.Location = New-Object System.Drawing.Point(295, 37); $txtPwd.Visible = $false
+$txtPwd.Location = New-Object System.Drawing.Point(825, $rowActive); $txtPwd.Visible = $false
 $pnlConn.Controls.Add($txtPwd)
 
 $cmbAuth.Add_SelectedIndexChanged({
     $isSql = ($cmbAuth.SelectedItem -eq 'SQL-Login')
     $lblUser.Visible = $isSql; $txtUser.Visible = $isSql
     $lblPwd.Visible  = $isSql; $txtPwd.Visible  = $isSql
-    $pnlConn.Height  = if ($isSql) { 155 } else { 140 }
 })
 
 $chkTrust = New-Object System.Windows.Forms.CheckBox
@@ -698,7 +703,7 @@ $chkTrust.Font     = $fntSmall
 $chkTrust.ForeColor= [System.Drawing.Color]::FromArgb(255,193,7)
 $chkTrust.AutoSize = $true
 $chkTrust.Checked  = [bool]$Config.TrustServerCertificate
-$chkTrust.Location = New-Object System.Drawing.Point(8, 75)
+$chkTrust.Location = New-Object System.Drawing.Point(8, 72)
 $pnlConn.Controls.Add($chkTrust)
 
 $btnConnect = New-Object System.Windows.Forms.Button
@@ -721,7 +726,7 @@ $pnlConn.Controls.Add($btnDisconnect)
 $lblInfo = New-Object System.Windows.Forms.Label
 $lblInfo.Font = $fntSmall; $lblInfo.ForeColor = $clrSubText
 $lblInfo.AutoSize = $false; $lblInfo.Size = New-Object System.Drawing.Size(350, 18)
-$lblInfo.Location = New-Object System.Drawing.Point(190, 107)
+$lblInfo.Location = New-Object System.Drawing.Point(190, 105)
 $pnlConn.Controls.Add($lblInfo)
 
 # --- Gegenstelle (anderer Server) + Verfahrenswahl ---
@@ -729,13 +734,13 @@ $otherLbl = if ($script:ActiveRole -eq 'Source') { 'Zielserver:' } else { 'Quell
 $lblOther = New-Object System.Windows.Forms.Label
 $lblOther.Text = $otherLbl; $lblOther.Font = $fntSmall
 $lblOther.ForeColor = $clrSubText; $lblOther.AutoSize = $true
-$lblOther.Location = New-Object System.Drawing.Point(8, 135)
+$lblOther.Location = New-Object System.Drawing.Point(8, ($rowOther + 3))
 $pnlConn.Controls.Add($lblOther)
 
 $txtOther = New-Object System.Windows.Forms.TextBox
 $txtOther.Font = $fntMono; $txtOther.BackColor = $clrInput; $txtOther.ForeColor = $clrText
-$txtOther.BorderStyle = 'FixedSingle'; $txtOther.Size = New-Object System.Drawing.Size(250, 22)
-$txtOther.Location = New-Object System.Drawing.Point(115, 132)
+$txtOther.BorderStyle = 'FixedSingle'; $txtOther.Size = New-Object System.Drawing.Size(260, 22)
+$txtOther.Location = New-Object System.Drawing.Point(95, $rowOther)
 if ($script:ActiveRole -eq 'Target' -and $script:LoadedState -and $script:LoadedState.SourceServer) {
     $txtOther.Text = $script:LoadedState.SourceServer
 }
@@ -744,7 +749,7 @@ $pnlConn.Controls.Add($txtOther)
 $btnCheck = New-Object System.Windows.Forms.Button
 $btnCheck.Text = 'Verbindung pruefen'; $btnCheck.Font = $fntSmall
 $btnCheck.Size = New-Object System.Drawing.Size(130, 22)
-$btnCheck.Location = New-Object System.Drawing.Point(375, 132)
+$btnCheck.Location = New-Object System.Drawing.Point(390, $rowOther)
 $btnCheck.BackColor = [System.Drawing.Color]::FromArgb(60,63,70)
 $btnCheck.ForeColor = $clrText; $btnCheck.FlatStyle = 'Flat'; $btnCheck.FlatAppearance.BorderSize = 0
 $pnlConn.Controls.Add($btnCheck)
@@ -752,21 +757,21 @@ $pnlConn.Controls.Add($btnCheck)
 $lblVerf = New-Object System.Windows.Forms.Label
 $lblVerf.Text = 'Verfahren:'; $lblVerf.Font = $fntSmall
 $lblVerf.ForeColor = $clrSubText; $lblVerf.AutoSize = $true
-$lblVerf.Location = New-Object System.Drawing.Point(515, 135)
+$lblVerf.Location = New-Object System.Drawing.Point(535, ($rowOther + 3))
 $pnlConn.Controls.Add($lblVerf)
 
 $cmbVerfahren = New-Object System.Windows.Forms.ComboBox
 $cmbVerfahren.Font = $fntSmall; $cmbVerfahren.BackColor = $clrInput; $cmbVerfahren.ForeColor = $clrText
 $cmbVerfahren.FlatStyle = 'Flat'; $cmbVerfahren.DropDownStyle = 'DropDownList'
 $cmbVerfahren.Size = New-Object System.Drawing.Size(90, 22)
-$cmbVerfahren.Location = New-Object System.Drawing.Point(580, 132)
+$cmbVerfahren.Location = New-Object System.Drawing.Point(600, $rowOther)
 $cmbVerfahren.Items.AddRange(@('Auto','Direkt','Umweg')) | Out-Null
 $cmbVerfahren.SelectedIndex = 0
 $pnlConn.Controls.Add($cmbVerfahren)
 
 $lblScenario = New-Object System.Windows.Forms.Label
 $lblScenario.Font = $fntSmall; $lblScenario.ForeColor = $clrSubText; $lblScenario.AutoSize = $true
-$lblScenario.Location = New-Object System.Drawing.Point(680, 135)
+$lblScenario.Location = New-Object System.Drawing.Point(700, ($rowOther + 3))
 $lblScenario.Text = 'Verfahren noch nicht geprueft'
 $pnlConn.Controls.Add($lblScenario)
 
@@ -800,7 +805,7 @@ $btnCheck.Add_Click({
 })
 
 # pnlConn Standardhoehe anpassen
-$pnlConn.Height = 165
+$pnlConn.Height = 135
 
 # --- Globale Auswahl-Leiste (alle Tabs) ---
 $pnlGlobalSel           = New-Object System.Windows.Forms.Panel
