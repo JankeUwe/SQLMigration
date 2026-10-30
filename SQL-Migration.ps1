@@ -246,6 +246,82 @@ function Update-StatusBar {
 }
 
 # ===========================================================================
+# FORTSCHRITT: laufende BACKUP-/RESTORE-Vorgaenge (sys.dm_exec_requests)
+# Eigene kurze SqlClient-Verbindungen aus dem GUI-Thread, getrennt von den
+# Verbindungen des Migrations-Runspaces. Wird vom Job-Timer alle ~2 s gerufen.
+# ===========================================================================
+$script:ProgTargets = @()
+$script:ProgConns   = @{}
+$script:ProgTick    = 0
+
+function Get-SqlOpProgress {
+    param([hashtable]$T)
+    $rows = @()
+    try {
+        $conn = $script:ProgConns[$T.Server]
+        if (-not $conn -or $conn.State -ne 'Open') {
+            $sb = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+            $sb['Data Source'] = $T.Server
+            $sb['Connect Timeout'] = 3
+            $sb['TrustServerCertificate'] = [bool]$T.Trust
+            $sb['Application Name'] = 'SQLMigration-Progress'
+            if ($T.Auth -eq 'SQL-Login') {
+                $sb['User ID'] = $T.User
+                $sb['Password'] = (New-Object System.Management.Automation.PSCredential($T.User, $T.Pwd)).GetNetworkCredential().Password
+            } else {
+                $sb['Integrated Security'] = $true
+            }
+            $conn = New-Object System.Data.SqlClient.SqlConnection($sb.ConnectionString)
+            $conn.Open()
+            $script:ProgConns[$T.Server] = $conn
+        }
+        $cmd = $conn.CreateCommand()
+        $cmd.CommandTimeout = 3
+        $cmd.CommandText = "SELECT r.command, DB_NAME(r.database_id) AS db, r.percent_complete AS pct, " +
+                           "r.estimated_completion_time / 60000 AS eta_min " +
+                           "FROM sys.dm_exec_requests r " +
+                           "WHERE (r.command LIKE 'BACKUP%' OR r.command LIKE 'RESTORE%') AND r.session_id <> @@SPID"
+        $rd = $cmd.ExecuteReader()
+        while ($rd.Read()) {
+            $db = [string]$rd['db']
+            if ($db -in 'master','msdb','tempdb','model') { $db = '' }
+            $rows += [pscustomobject]@{
+                Label = $T.Label; Command = [string]$rd['command']; Database = $db
+                Percent = [int][math]::Floor([double]$rd['pct']); EtaMin = [int]$rd['eta_min']
+            }
+        }
+        $rd.Close()
+    }
+    catch {
+        try { $script:ProgConns.Remove($T.Server) } catch { }
+    }
+    return $rows
+}
+
+function Update-OperationProgress {
+    if (-not $script:ProgTargets -or $script:ProgTargets.Count -eq 0) { return }
+    $ops = @()
+    foreach ($t in $script:ProgTargets) { $ops += Get-SqlOpProgress -T $t }
+    if ($ops.Count -gt 0) {
+        $txt = ($ops | ForEach-Object {
+            $eta = if ($_.EtaMin -gt 0) { ", noch ca. $($_.EtaMin) min" } else { '' }
+            $db  = if ($_.Database) { " $($_.Database)" } else { '' }
+            "[$($_.Label)] $($_.Command)$db $($_.Percent) %$eta"
+        }) -join '   |   '
+        $lblProgress.Text = $txt
+        $progress.Value = [math]::Min(100, [math]::Max(0, ($ops | Measure-Object Percent -Maximum).Maximum))
+    } else {
+        $lblProgress.Text = 'kein Backup/Restore aktiv (siehe Statuszeile)'
+    }
+}
+
+function Stop-OperationProgress {
+    $script:ProgTargets = @()
+    foreach ($c in @($script:ProgConns.Values)) { try { $c.Close(); $c.Dispose() } catch { } }
+    $script:ProgConns = @{}
+}
+
+# ===========================================================================
 # HILFS: Scrollbarer Fehler-Dialog (zeigt komplette Exception-Kette)
 # ===========================================================================
 function Show-ErrorDialog {
@@ -421,7 +497,9 @@ Import-Module '$modulePath\Invoke-Migration.psm1'        -Force
         if (-not $ctx) { $this.Stop(); $this.Dispose(); return }
 
         if (-not $ctx.Handle.IsCompleted) {
-            # Laufender Job: letzte Logzeile als Fortschritt in der Statuszeile zeigen
+            # Laufender Job: Backup-/Restore-Fortschritt (alle ~2 s) und letzte Logzeile
+            $script:ProgTick++
+            if (($script:ProgTick % 8) -eq 0) { try { Update-OperationProgress } catch { } }
             try {
                 $lf = Get-MigrationLogPath
                 if ($lf -and $script:statusLabel) {
@@ -808,6 +886,8 @@ $btnCheck.Add_Click({
         }
     } finally { $form.Cursor = [System.Windows.Forms.Cursors]::Default }
 
+    $script:LastCheckDirect = [bool]($reach -and $loginOk)
+    Set-ActionLabels (Get-PlannedScenario)
     if ($reach -and $loginOk) {
         $lblScenario.Text = "[OK] $other verbunden -> DIREKT moeglich"
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(40,167,69)
@@ -1380,6 +1460,28 @@ $btnMigrate.BackColor = $clrAccentGrn; $btnMigrate.ForeColor = [System.Drawing.C
 $btnMigrate.FlatStyle = 'Flat'; $btnMigrate.FlatAppearance.BorderSize = 0
 $pnlMigration.Controls.Add($btnMigrate)
 
+# Beschriftung je Verfahren: Im Direkt-Verfahren gibt es keine "Phase 1/2", alles laeuft in einem Durchlauf.
+$script:LastCheckDirect = $null
+function Set-ActionLabels {
+    param([string]$Scenario)
+    if ($script:ActiveRole -eq 'Source' -and $Scenario -eq 'Direct') {
+        $lblMigTitle.Text  = '**  MIGRATION  QUELLE -> ZIEL: Backup + Kopie + Restore (ein Durchlauf)'
+        $btnMigrate.Text   = '>>  MIGRATION STARTEN  (Backup + Restore)'
+    }
+    elseif ($script:ActiveRole -eq 'Source') {
+        $lblMigTitle.Text  = '**  PHASE 1 - QUELLE: Backup / Detach + Copy'
+        $btnMigrate.Text   = '>>  PHASE 1 STARTEN  (Backup / Detach + Copy)'
+    }
+}
+function Get-PlannedScenario {
+    switch ($cmbVerfahren.SelectedItem) {
+        'Direkt' { return 'Direct' }
+        'Umweg'  { return 'TwoPhase' }
+        default  { if ($script:LastCheckDirect) { return 'Direct' } else { return 'TwoPhase' } }
+    }
+}
+$cmbVerfahren.Add_SelectedIndexChanged({ Set-ActionLabels (Get-PlannedScenario) })
+
 $btnOpenLog = New-Object System.Windows.Forms.Button
 $btnOpenLog.Text = '[Log]'; $btnOpenLog.Font = $fntSmall
 $btnOpenLog.Size = New-Object System.Drawing.Size(80,34)
@@ -1529,6 +1631,18 @@ $btnMigrate.Add_Click({
 
     $btnMigrate.Enabled = $false
     $progress.Value = 0; $lblProgress.Text = 'Starte...'
+    Set-ActionLabels $scenario
+
+    # Backup-/Restore-Fortschritt: verbundener Server, im Direkt-Verfahren zusaetzlich das Ziel
+    $script:ProgTargets = @(
+        @{ Label = $(if ($script:ActiveRole -eq 'Source') { 'Quelle' } else { 'Ziel' })
+           Server = $script:_ConnSrvName; Auth = $script:_ConnAuthMode; User = $script:_ConnSqlUser
+           Pwd = $script:_ConnPwdSS; Trust = $chkTrust.Checked }
+    )
+    if ($scenario -eq 'Direct' -and $script:OtherServer) {
+        $script:ProgTargets += @{ Label = 'Ziel'; Server = $script:OtherServer; Auth = $script:OtherAuth
+                                  User = $script:OtherUser; Pwd = $script:OtherPwdSS; Trust = $chkTrust.Checked }
+    }
 
     $srcSrv      = $script:ActiveServer
     $activeRole  = $script:ActiveRole
@@ -1802,9 +1916,13 @@ $btnMigrate.Add_Click({
         $script:OtherAuth, $script:OtherUser, $script:OtherPwdSS
     ) -OnComplete {
         param($r)
+        Stop-OperationProgress
         $btnMigrate.Invoke([Action]{ $btnMigrate.Enabled = $true })
         $progress.Invoke([Action]{ $progress.Value = 100 })
         $lblProgress.Invoke([Action]{ $lblProgress.Text = 'Abgeschlossen!' })
+        if ($script:ActiveRole -eq 'Source' -and $script:Scenario -eq 'Direct') {
+            $btnMigrate.Invoke([Action]{ $btnMigrate.Text = '>>  MIGRATION FERTIG  (erneut starten)' })
+        }
 
         $hinweis = if ($script:ActiveRole -eq 'Source' -and $script:Scenario -eq 'TwoPhase') {
             "`n`nPhase 1 abgeschlossen.`nBitte Script nun auf dem ZIEL-Server ausfuehren."
@@ -1824,6 +1942,7 @@ $btnMigrate.Add_Click({
 
     } -OnError {
         param($err)
+        Stop-OperationProgress
         $btnMigrate.Invoke([Action]{ $btnMigrate.Enabled = $true })
         $lblProgress.Invoke([Action]{ $lblProgress.Text = 'FEHLER' })
         Update-StatusBar "Fehler - Details im Fehler-Dialog" 'Error'
