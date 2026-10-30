@@ -703,7 +703,7 @@ $chkTrust.Font     = $fntSmall
 $chkTrust.ForeColor= [System.Drawing.Color]::FromArgb(255,193,7)
 $chkTrust.AutoSize = $true
 $chkTrust.Checked  = [bool]$Config.TrustServerCertificate
-$chkTrust.Location = New-Object System.Drawing.Point(8, 72)
+$chkTrust.Location = New-Object System.Drawing.Point(95, 72)
 $pnlConn.Controls.Add($chkTrust)
 
 $btnConnect = New-Object System.Windows.Forms.Button
@@ -874,8 +874,8 @@ $tabs.Add_DrawItem({
     $tc       = $sender
     $page     = $tc.TabPages[$e.Index]
     $selected = ($e.Index -eq $tc.SelectedIndex)
-    $bg = if ($selected) { $roleColor }  else { $clrHeader }
-    $fg = if ($selected) { [System.Drawing.Color]::White } else { $clrSubText }
+    $bg = if ($selected) { $roleColor }  else { [System.Drawing.Color]::FromArgb(218,222,228) }
+    $fg = if ($selected) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::FromArgb(30,34,42) }
     $rect  = $e.Bounds
     $brush = New-Object System.Drawing.SolidBrush($bg)
     $e.Graphics.FillRectangle($brush, $rect)
@@ -966,7 +966,7 @@ function New-ObjectTab {
     $lv = New-Object System.Windows.Forms.ListView
     $lv.Dock = 'Fill'; $lv.View = 'Details'; $lv.FullRowSelect = $true
     $lv.GridLines = $true; $lv.CheckBoxes = $true
-    $lv.BackColor = $clrInput; $lv.ForeColor = $clrText
+    $lv.BackColor = [System.Drawing.Color]::White; $lv.ForeColor = [System.Drawing.Color]::FromArgb(30,34,42)
     $lv.BorderStyle = 'None'; $lv.Font = $fntSmall; $lv.MultiSelect = $true
     foreach ($col in $Columns) {
         $c = New-Object System.Windows.Forms.ColumnHeader
@@ -1198,8 +1198,9 @@ $pnlMigration.Controls.Add($cmbMethod)
 # --- Exchange-Pfad ---
 $lblBpth = New-Object System.Windows.Forms.Label
 $lblBpth.Text = 'Exchange-Pfad:'; $lblBpth.Font = $fntSmall
-$lblBpth.ForeColor = $clrSubText; $lblBpth.AutoSize = $true
-$lblBpth.Location = New-Object System.Drawing.Point(255,42)
+$lblBpth.ForeColor = $clrSubText; $lblBpth.AutoSize = $false
+$lblBpth.Size = New-Object System.Drawing.Size(105,18); $lblBpth.TextAlign = 'MiddleRight'
+$lblBpth.Location = New-Object System.Drawing.Point(245,41)
 $pnlMigration.Controls.Add($lblBpth)
 
 $txtExPath = New-Object System.Windows.Forms.TextBox
@@ -1231,22 +1232,23 @@ $pnlMigration.Controls.Add($btnBrowseEx)
 # --- Lokaler Backup-Pfad ---
 $lblLPath = New-Object System.Windows.Forms.Label
 $lblLPath.Text = 'Lokaler Backup-Pfad:'; $lblLPath.Font = $fntSmall
-$lblLPath.ForeColor = $clrSubText; $lblLPath.AutoSize = $true
-$lblLPath.Location = New-Object System.Drawing.Point(10,72)
+$lblLPath.ForeColor = $clrSubText; $lblLPath.AutoSize = $false
+$lblLPath.Size = New-Object System.Drawing.Size(105,18); $lblLPath.TextAlign = 'MiddleRight'
+$lblLPath.Location = New-Object System.Drawing.Point(245,71)
 $pnlMigration.Controls.Add($lblLPath)
 
 $txtLPath = New-Object System.Windows.Forms.TextBox
 $txtLPath.Font = $fntMono; $txtLPath.BackColor = $clrInput
 $txtLPath.ForeColor = $clrText; $txtLPath.BorderStyle = 'FixedSingle'
 $txtLPath.Size = New-Object System.Drawing.Size(310,22)
-$txtLPath.Location = New-Object System.Drawing.Point(145,69)
+$txtLPath.Location = New-Object System.Drawing.Point(355,69)
 $txtLPath.Text = $Config.DefaultLocalBackupPath
 $pnlMigration.Controls.Add($txtLPath)
 
 $btnBrowseL = New-Object System.Windows.Forms.Button
 $btnBrowseL.Text = '...'; $btnBrowseL.Font = $fntBold
 $btnBrowseL.Size = New-Object System.Drawing.Size(30,22)
-$btnBrowseL.Location = New-Object System.Drawing.Point(463,69)
+$btnBrowseL.Location = New-Object System.Drawing.Point(673,69)
 $btnBrowseL.BackColor = [System.Drawing.Color]::FromArgb(60,63,70)
 $btnBrowseL.ForeColor = $clrText; $btnBrowseL.FlatStyle = 'Flat'
 $btnBrowseL.FlatAppearance.BorderSize = 0
@@ -1265,7 +1267,7 @@ $lblLPathHint = New-Object System.Windows.Forms.Label
 $lblLPathHint.Text = '(Fallback wenn Dienstkonto keinen UNC-Zugriff hat)'
 $lblLPathHint.Font = $fntSmall; $lblLPathHint.ForeColor = $clrSubText
 $lblLPathHint.AutoSize = $true
-$lblLPathHint.Location = New-Object System.Drawing.Point(500,73)
+$lblLPathHint.Location = New-Object System.Drawing.Point(710,73)
 $pnlMigration.Controls.Add($lblLPathHint)
 
 # --- Optionen (nur Quell-Modus) ---

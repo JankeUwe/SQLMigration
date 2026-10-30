@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 ### GUI
 - Title bar now uses the role colour (blue = source, green = target); log path no longer overlaps the version label
 - Quellserver and Zielserver are two separate rows, always source on top; the connected server's row carries the Auth fields, the counterpart row carries "Verbindung pruefen" and Verfahren
+- TrustServerCertificate checkbox aligned with the server text boxes; Exchange and local backup path boxes aligned in one column; grid rows white; unselected tabs light grey
 
 ## [1.2.0.0] - 2026-06-21
 
