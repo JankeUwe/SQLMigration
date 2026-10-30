@@ -1672,10 +1672,6 @@ $btnMigrate.Add_Click({
             # ----------------------------------------------------------------
             # Post-Restore-Bereinigung (Ziel)
             # ----------------------------------------------------------------
-            if ($chks['Datenbanken'] -and $srcDbs.Count -gt 0) {
-                # Verwaiste DB-User reparieren + DB-Owner auf sa setzen
-                Invoke-PostRestoreCleanup -TargetServer $srv -Databases $srcDbs -WhatIf:$whatif
-            }
             if ($chks['Logins']) {
                 # 1. Mixed Mode aktivieren (+ Dienst-Neustart), falls SQL-Logins
                 #    transferiert werden und das Ziel nur Windows-Auth nutzt.
@@ -1721,6 +1717,11 @@ $btnMigrate.Add_Click({
                 if ($chks['Proxies']       -and $objScripts.Proxies)       { Import-MigrationScriptFile -TargetServer $srv -ScriptFile $objScripts.Proxies       -Category 'PROXY-IMPORT' -WhatIf:$whatif }
                 if ($chks['Linked Server'] -and $objScripts.LinkedServers) { Import-MigrationScriptFile -TargetServer $srv -ScriptFile $objScripts.LinkedServers -Category 'LS-IMPORT'    -WhatIf:$whatif }
                 if ($chks['Agent Jobs']    -and $objScripts.Jobs)          { Import-MigrationScriptFile -TargetServer $srv -ScriptFile $objScripts.Jobs          -Category 'JOB-IMPORT'   -WhatIf:$whatif }
+            }
+
+            # Abschluss: Standardisierung + ggf. Always-On-Aufnahme (nach Logins/Objekten)
+            if ($chks['Datenbanken'] -and $srcDbs.Count -gt 0) {
+                Invoke-MigrationFinalize -TargetServer $srv -Databases $srcDbs -WhatIf:$whatif
             }
 
             # Phase2 in Zustandsdatei vermerken

@@ -1223,6 +1223,112 @@ function Invoke-DirectDatabaseTransfer {
 }
 
 # ---------------------------------------------------------------------------
+# ABSCHLUSS: Datenbank-Standardisierung + Aufnahme in Always On
+# Laeuft ganz am Ende (nach Logins/Objekten), weil verwaiste User erst nach
+# dem Login-Transfer repariert werden koennen.
+#   1. Invoke-sqmDatabaseStandardization (sqmSQLTool)
+#   2. Ist das Ziel Primary einer Availability Group: Add-sqmDatabaseToAG
+# Ohne sqmSQLTool: Fallback auf Invoke-PostRestoreCleanup (nur Orphans + Owner).
+# ---------------------------------------------------------------------------
+function Invoke-MigrationFinalize {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$TargetServer,
+        [Parameter(Mandatory)][string[]]$Databases,
+        [switch]$WhatIf
+    )
+
+    $instance = $TargetServer.Name
+
+    if (-not (Get-Module -Name sqmSQLTool)) {
+        $local = Join-Path $PSScriptRoot '..\..\sqmSQLTool\sqmSQLTool.psd1'
+        try {
+            if (Get-Module -ListAvailable -Name sqmSQLTool) { Import-Module sqmSQLTool -DisableNameChecking -ErrorAction Stop }
+            elseif (Test-Path $local)                       { Import-Module $local -DisableNameChecking -ErrorAction Stop }
+        }
+        catch {
+            Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' -Message "sqmSQLTool konnte nicht geladen werden" -Detail $_.Exception.Message
+        }
+    }
+
+    if (-not (Get-Command Invoke-sqmDatabaseStandardization -ErrorAction SilentlyContinue)) {
+        Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' `
+            -Message "sqmSQLTool nicht verfuegbar - Fallback auf einfache Bereinigung (Orphans + Owner)"
+        Invoke-PostRestoreCleanup -TargetServer $TargetServer -Databases $Databases -WhatIf:$WhatIf
+        Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' `
+            -Message "Always-On-Aufnahme uebersprungen (Add-sqmDatabaseToAG nicht verfuegbar) - bitte manuell pruefen"
+        return
+    }
+
+    # 1. Standardisierung
+    Write-MigrationLog -Level 'STEP' -Category 'STANDARD' -Message "Datenbank-Standardisierung: $($Databases -join ', ')"
+    try {
+        $rows = @(Invoke-sqmDatabaseStandardization -SqlInstance $instance -Database $Databases `
+                    -WhatIf:$WhatIf -Confirm:$false -EnableException)
+        foreach ($r in $rows) {
+            $lvl = if ($r.Status -eq 'Failed') { 'WARN' } else { 'INFO' }
+            Write-MigrationLog -Level $lvl -Category 'STANDARD' `
+                -Message ("{0}: {1} {2} [{3}]" -f $r.Database, $r.Step, $r.Target, $r.Status) -Detail $r.Message
+        }
+        $failed = @($rows | Where-Object Status -eq 'Failed').Count
+        $lvl = if ($failed) { 'WARN' } else { 'SUCCESS' }
+        Write-MigrationLog -Level $lvl -Category 'STANDARD' `
+            -Message "Standardisierung beendet ($($rows.Count) Aktionen, $failed fehlgeschlagen)"
+    }
+    catch {
+        Write-MigrationLog -Level 'WARN' -Category 'STANDARD' -Message "Standardisierung fehlgeschlagen" -Detail $_.Exception.Message
+    }
+
+    # 2. Always On: ist das Ziel Primary einer AG?
+    $ags = @()
+    try {
+        $q = @"
+SELECT ag.name AS AgName
+FROM sys.availability_groups ag
+JOIN sys.dm_hadr_availability_group_states gs ON gs.group_id = ag.group_id
+WHERE gs.primary_replica = @@SERVERNAME
+"@
+        $hadr = Invoke-DbaQuery -SqlInstance $TargetServer -Query "SELECT CAST(SERVERPROPERTY('IsHadrEnabled') AS int) AS H" -ErrorAction Stop
+        if ([int]$hadr.H -eq 1) {
+            $ags = @(Invoke-DbaQuery -SqlInstance $TargetServer -Query $q -ErrorAction Stop | ForEach-Object { $_.AgName })
+        }
+    }
+    catch {
+        Write-MigrationLog -Level 'WARN' -Category 'AG' -Message "Always-On-Status des Ziels nicht ermittelbar" -Detail $_.Exception.Message
+        return
+    }
+
+    if ($ags.Count -eq 0) {
+        Write-MigrationLog -Level 'INFO' -Category 'AG' -Message "Ziel ist nicht Primary einer Availability Group - keine AG-Aufnahme"
+        return
+    }
+    if ($ags.Count -gt 1) {
+        Write-MigrationLog -Level 'WARN' -Category 'AG' `
+            -Message "Ziel ist Primary mehrerer AGs ($($ags -join ', ')) - automatische Auswahl nicht moeglich" `
+            -Detail "Bitte Add-sqmDatabaseToAG -AvailabilityGroup <Name> -Database ... manuell ausfuehren."
+        return
+    }
+
+    $ag = $ags[0]
+    Write-MigrationLog -Level 'STEP' -Category 'AG' -Message "Nehme Datenbanken in AG '$ag' auf: $($Databases -join ', ')"
+    try {
+        $res = @(Add-sqmDatabaseToAG -SqlInstance $instance -AvailabilityGroup $ag -Database $Databases `
+                    -WhatIf:$WhatIf -EnableException)
+        foreach ($r in $res) {
+            $db  = if ($r.PSObject.Properties['Database']) { $r.Database } else { '' }
+            $st  = if ($r.PSObject.Properties['Status'])   { $r.Status }   else { '' }
+            $msg = if ($r.PSObject.Properties['Message'])  { $r.Message }  else { ($r | Out-String).Trim() }
+            $lvl = if ($st -match 'Fail|Error|Missing|Unsupported') { 'WARN' } else { 'INFO' }
+            Write-MigrationLog -Level $lvl -Category 'AG' -Message "${db}: $st" -Detail $msg
+        }
+        Write-MigrationLog -Level 'SUCCESS' -Category 'AG' -Message "AG-Aufnahme beendet ($ag)"
+    }
+    catch {
+        Write-MigrationLog -Level 'WARN' -Category 'AG' -Message "AG-Aufnahme fehlgeschlagen ($ag)" -Detail $_.Exception.Message
+    }
+}
+
+# ---------------------------------------------------------------------------
 # DIREKT-MIGRATION (ein Durchlauf, beide Server sichtbar)
 # DB ueber Invoke-DirectDatabaseTransfer (Ziel via Admin-Freigabe), Objekte
 # direkt via Copy-Dba* (Quelle+Ziel gleichzeitig sichtbar).
@@ -1249,7 +1355,6 @@ function Invoke-DirectMigration {
         Invoke-DirectDatabaseTransfer -SourceServer $SourceServer -TargetServer $TargetServer `
             -Databases $Databases -LocalBackupPath $LocalBackupPath -Method $Method `
             -WithCompression:$WithCompression -CopyOnly:$CopyOnly -WhatIf:$WhatIf
-        Invoke-PostRestoreCleanup -TargetServer $TargetServer -Databases $Databases -WhatIf:$WhatIf
     }
 
     # 2. Logins (Mixed Mode + Policy aus -> Copy-DbaLogin -> Policy ein -> AD-Cleanup)
@@ -1275,10 +1380,16 @@ function Invoke-DirectMigration {
         }
     }
 
+    # 4. Abschluss: Standardisierung + ggf. Always-On-Aufnahme (nach Logins/Objekten)
+    if ($Objects['Datenbanken'] -and $Databases.Count -gt 0) {
+        Invoke-MigrationFinalize -TargetServer $TargetServer -Databases $Databases -WhatIf:$WhatIf
+    }
+
     Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT' -Message "Direkt-Migration abgeschlossen"
 }
 
 Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
+                               Invoke-MigrationFinalize,
                                Invoke-DatabaseMigrationDetachAttach,
                                Invoke-PostRestoreCleanup,
                                Remove-DeadAdLogin,

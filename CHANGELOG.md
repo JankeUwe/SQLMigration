@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0.0] - 2026-10-30
+
+### Features
+- **Final step after the database migration** (Direct and Detour phase 2)
+  - New `Invoke-MigrationFinalize`: runs `Invoke-sqmDatabaseStandardization` (orphaned users, users without login, compatibility level, TARGET_RECOVERY_TIME, owner sa) on the migrated databases, now AFTER logins/objects so orphans can actually be re-mapped
+  - If the target is the primary of an Always On availability group: `Add-sqmDatabaseToAG` adds the databases (exactly one AG is picked automatically; with several AGs the step is skipped with a hint)
+  - Without sqmSQLTool: fallback to the previous cleanup (`Invoke-PostRestoreCleanup`), AG step skipped with a warning
+
 ## [1.2.0.0] - 2026-06-21
 
 ### Documentation
