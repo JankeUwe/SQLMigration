@@ -613,111 +613,131 @@ $pnlHead.Controls.Add($lblConnState)
 # --- Verbindungs-Panel ---
 $pnlConn            = New-Object System.Windows.Forms.Panel
 $pnlConn.Dock       = 'Top'
-$pnlConn.Height     = 135
+$pnlConn.Height     = 102
 $pnlConn.BackColor  = $clrPanel
 $pnlConn.Padding    = New-Object System.Windows.Forms.Padding(8,6,8,6)
 $pnlMain.Controls.Add($pnlConn)
 
 # Zeile 1 = Quellserver, Zeile 2 = Zielserver (immer in dieser Reihenfolge).
 # Der verbundene Server ist je nach Rolle Zeile 1 (Quelle) oder Zeile 2 (Ziel).
+# Jede Zeile hat eigene Anmeldung (Windows / SQL-Login) und einen eigenen Verbinden-Button.
 $rowActive = if ($script:ActiveRole -eq 'Source') { 8 } else { 38 }
 $rowOther  = if ($script:ActiveRole -eq 'Source') { 38 } else { 8 }
 
-$lblSrv             = New-Object System.Windows.Forms.Label
-$lblSrv.Text        = if ($script:ActiveRole -eq 'Source') { 'Quellserver:' } else { 'Zielserver:' }
-$lblSrv.Font        = $fntBold
-$lblSrv.ForeColor   = $roleColor
-$lblSrv.AutoSize    = $true
-$lblSrv.Location    = New-Object System.Drawing.Point(8, ($rowActive + 3))
-$pnlConn.Controls.Add($lblSrv)
+function New-ServerRow {
+    param([string]$LabelText, [int]$Y, [bool]$IsActive)
+    $r = @{}
 
-$txtServer          = New-Object System.Windows.Forms.TextBox
-$txtServer.Font     = $fntMono
-$txtServer.BackColor= $clrInput
-$txtServer.ForeColor= $clrText
-$txtServer.BorderStyle = 'FixedSingle'
-$txtServer.Size     = New-Object System.Drawing.Size(260, 22)
-$txtServer.Location = New-Object System.Drawing.Point(95, $rowActive)
+    $r.Label = New-Object System.Windows.Forms.Label
+    $r.Label.Text = $LabelText; $r.Label.AutoSize = $true
+    $r.Label.Font = if ($IsActive) { $fntBold } else { $fntSmall }
+    $r.Label.ForeColor = if ($IsActive) { $roleColor } else { $clrSubText }
+    $r.Label.Location = New-Object System.Drawing.Point(8, ($Y + 3))
+    $pnlConn.Controls.Add($r.Label)
+
+    $r.Text = New-Object System.Windows.Forms.TextBox
+    $r.Text.Font = $fntMono; $r.Text.BackColor = $clrInput; $r.Text.ForeColor = $clrText
+    $r.Text.BorderStyle = 'FixedSingle'
+    $r.Text.Size = New-Object System.Drawing.Size(260, 22)
+    $r.Text.Location = New-Object System.Drawing.Point(95, $Y)
+    $pnlConn.Controls.Add($r.Text)
+
+    $lblA = New-Object System.Windows.Forms.Label
+    $lblA.Text = 'Auth:'; $lblA.Font = $fntSmall; $lblA.ForeColor = $clrSubText; $lblA.AutoSize = $true
+    $lblA.Location = New-Object System.Drawing.Point(368, ($Y + 3))
+    $pnlConn.Controls.Add($lblA)
+
+    $r.Auth = New-Object System.Windows.Forms.ComboBox
+    $r.Auth.Font = $fntSmall; $r.Auth.BackColor = $clrInput; $r.Auth.ForeColor = $clrText
+    $r.Auth.FlatStyle = 'Flat'; $r.Auth.DropDownStyle = 'DropDownList'
+    $r.Auth.Size = New-Object System.Drawing.Size(100, 22)
+    $r.Auth.Location = New-Object System.Drawing.Point(402, $Y)
+    $r.Auth.Items.AddRange(@('Windows', 'SQL-Login')) | Out-Null
+    $r.Auth.SelectedIndex = 0
+    $pnlConn.Controls.Add($r.Auth)
+
+    $r.UserLbl = New-Object System.Windows.Forms.Label
+    $r.UserLbl.Text = 'Benutzer:'; $r.UserLbl.Font = $fntSmall; $r.UserLbl.ForeColor = $clrSubText
+    $r.UserLbl.AutoSize = $true; $r.UserLbl.Visible = $false
+    $r.UserLbl.Location = New-Object System.Drawing.Point(512, ($Y + 3))
+    $pnlConn.Controls.Add($r.UserLbl)
+
+    $r.User = New-Object System.Windows.Forms.TextBox
+    $r.User.Font = $fntMono; $r.User.BackColor = $clrInput; $r.User.ForeColor = $clrText
+    $r.User.BorderStyle = 'FixedSingle'; $r.User.Visible = $false
+    $r.User.Size = New-Object System.Drawing.Size(110, 22)
+    $r.User.Location = New-Object System.Drawing.Point(570, $Y)
+    $pnlConn.Controls.Add($r.User)
+
+    $r.PwdLbl = New-Object System.Windows.Forms.Label
+    $r.PwdLbl.Text = 'Passwort:'; $r.PwdLbl.Font = $fntSmall; $r.PwdLbl.ForeColor = $clrSubText
+    $r.PwdLbl.AutoSize = $true; $r.PwdLbl.Visible = $false
+    $r.PwdLbl.Location = New-Object System.Drawing.Point(690, ($Y + 3))
+    $pnlConn.Controls.Add($r.PwdLbl)
+
+    $r.Pwd = New-Object System.Windows.Forms.TextBox
+    $r.Pwd.Font = $fntMono; $r.Pwd.BackColor = $clrInput; $r.Pwd.ForeColor = $clrText
+    $r.Pwd.BorderStyle = 'FixedSingle'; $r.Pwd.PasswordChar = '*'; $r.Pwd.Visible = $false
+    $r.Pwd.Size = New-Object System.Drawing.Size(110, 22)
+    $r.Pwd.Location = New-Object System.Drawing.Point(752, $Y)
+    $pnlConn.Controls.Add($r.Pwd)
+
+    $r.Connect = New-Object System.Windows.Forms.Button
+    $r.Connect.Text = 'Verbinden'
+    $r.Connect.Font = if ($IsActive) { $fntBold } else { $fntSmall }
+    $r.Connect.Size = New-Object System.Drawing.Size(90, 24)
+    $r.Connect.Location = New-Object System.Drawing.Point(880, ($Y - 1))
+    $r.Connect.FlatStyle = 'Flat'; $r.Connect.FlatAppearance.BorderSize = 0
+    $r.Connect.BackColor = if ($IsActive) { $roleColor } else { [System.Drawing.Color]::FromArgb(60,63,70) }
+    $r.Connect.ForeColor = [System.Drawing.Color]::White
+    $pnlConn.Controls.Add($r.Connect)
+
+    # SQL-Login-Felder nur bei SQL-Login einblenden (je Zeile getrennt)
+    $r.Auth.Tag = $r
+    $r.Auth.Add_SelectedIndexChanged({
+        $row = $this.Tag
+        $isSql = ($this.SelectedItem -eq 'SQL-Login')
+        $row.UserLbl.Visible = $isSql; $row.User.Visible = $isSql
+        $row.PwdLbl.Visible  = $isSql; $row.Pwd.Visible  = $isSql
+    })
+    return $r
+}
+
+function ConvertTo-SecureFromText {
+    param([string]$Text)
+    if (-not $Text) { return $null }
+    $ss = New-Object System.Security.SecureString
+    $Text.ToCharArray() | ForEach-Object { $ss.AppendChar($_) }
+    return $ss
+}
+
+$srcLabel = 'Quellserver:'; $tgtLabel = 'Zielserver:'
+$rowSrc = New-ServerRow -LabelText $srcLabel -Y 8  -IsActive ($script:ActiveRole -eq 'Source')
+$rowTgt = New-ServerRow -LabelText $tgtLabel -Y 38 -IsActive ($script:ActiveRole -ne 'Source')
+$rowA = if ($script:ActiveRole -eq 'Source') { $rowSrc } else { $rowTgt }   # verbundener Server
+$rowO = if ($script:ActiveRole -eq 'Source') { $rowTgt } else { $rowSrc }   # Gegenstelle
+
+# Verbundener Server (Namen der Variablen wie bisher)
+$lblSrv = $rowA.Label; $txtServer = $rowA.Text; $cmbAuth = $rowA.Auth
+$txtUser = $rowA.User; $txtPwd = $rowA.Pwd; $btnConnect = $rowA.Connect
 # Standard: aktuellen Maschinennamen vorbelegen (lokale Instanz)
 $txtServer.Text = $env:COMPUTERNAME
 # Im Ziel-Modus: Zielserver aus Zustandsdatei vorbelegen (ueberschreibt Default)
 if ($script:ActiveRole -eq 'Target' -and $script:LoadedState -and $script:LoadedState.TargetServer) {
     $txtServer.Text = $script:LoadedState.TargetServer
 }
-$pnlConn.Controls.Add($txtServer)
 
-$lblAuth            = New-Object System.Windows.Forms.Label
-$lblAuth.Text       = 'Auth:'
-$lblAuth.Font       = $fntSmall
-$lblAuth.ForeColor  = $clrSubText
-$lblAuth.AutoSize   = $true
-$lblAuth.Location   = New-Object System.Drawing.Point(390, ($rowActive + 3))
-$pnlConn.Controls.Add($lblAuth)
-
-$cmbAuth            = New-Object System.Windows.Forms.ComboBox
-$cmbAuth.Font       = $fntSmall
-$cmbAuth.BackColor  = $clrInput
-$cmbAuth.ForeColor  = $clrText
-$cmbAuth.FlatStyle  = 'Flat'
-$cmbAuth.DropDownStyle = 'DropDownList'
-$cmbAuth.Size       = New-Object System.Drawing.Size(110, 22)
-$cmbAuth.Location   = New-Object System.Drawing.Point(425, $rowActive)
-$cmbAuth.Items.AddRange(@('Windows', 'SQL-Login')) | Out-Null
-$cmbAuth.SelectedIndex = 0
-$pnlConn.Controls.Add($cmbAuth)
-
-$lblUser = New-Object System.Windows.Forms.Label
-$lblUser.Text = 'Benutzer:'; $lblUser.Font = $fntSmall
-$lblUser.ForeColor = $clrSubText; $lblUser.AutoSize = $true
-$lblUser.Location = New-Object System.Drawing.Point(550, ($rowActive + 3)); $lblUser.Visible = $false
-$pnlConn.Controls.Add($lblUser)
-
-$txtUser = New-Object System.Windows.Forms.TextBox
-$txtUser.Font = $fntMono; $txtUser.BackColor = $clrInput; $txtUser.ForeColor = $clrText
-$txtUser.BorderStyle = 'FixedSingle'; $txtUser.Size = New-Object System.Drawing.Size(140, 22)
-$txtUser.Location = New-Object System.Drawing.Point(610, $rowActive); $txtUser.Visible = $false
-$pnlConn.Controls.Add($txtUser)
-
-$lblPwd = New-Object System.Windows.Forms.Label
-$lblPwd.Text = 'Passwort:'; $lblPwd.Font = $fntSmall
-$lblPwd.ForeColor = $clrSubText; $lblPwd.AutoSize = $true
-$lblPwd.Location = New-Object System.Drawing.Point(760, ($rowActive + 3)); $lblPwd.Visible = $false
-$pnlConn.Controls.Add($lblPwd)
-
-$txtPwd = New-Object System.Windows.Forms.TextBox
-$txtPwd.Font = $fntMono; $txtPwd.BackColor = $clrInput; $txtPwd.ForeColor = $clrText
-$txtPwd.BorderStyle = 'FixedSingle'; $txtPwd.PasswordChar = '*'
-$txtPwd.Size = New-Object System.Drawing.Size(140, 22)
-$txtPwd.Location = New-Object System.Drawing.Point(825, $rowActive); $txtPwd.Visible = $false
-$pnlConn.Controls.Add($txtPwd)
-
-$cmbAuth.Add_SelectedIndexChanged({
-    $isSql = ($cmbAuth.SelectedItem -eq 'SQL-Login')
-    $lblUser.Visible = $isSql; $txtUser.Visible = $isSql
-    $lblPwd.Visible  = $isSql; $txtPwd.Visible  = $isSql
-})
-
-$chkTrust = New-Object System.Windows.Forms.CheckBox
-$chkTrust.Text     = 'TrustServerCertificate (SQL 2022 / selbstsigniertes Zertifikat)'
-$chkTrust.Font     = $fntSmall
-$chkTrust.ForeColor= [System.Drawing.Color]::FromArgb(255,193,7)
-$chkTrust.AutoSize = $true
-$chkTrust.Checked  = [bool]$Config.TrustServerCertificate
-$chkTrust.Location = New-Object System.Drawing.Point(95, 72)
-$pnlConn.Controls.Add($chkTrust)
-
-$btnConnect = New-Object System.Windows.Forms.Button
-$btnConnect.Text = 'Verbinden'; $btnConnect.Font = $fntBold
-$btnConnect.Size = New-Object System.Drawing.Size(90, 26)
-$btnConnect.Location = New-Object System.Drawing.Point(8, 100)
-$btnConnect.BackColor = $roleColor; $btnConnect.ForeColor = [System.Drawing.Color]::White
-$btnConnect.FlatStyle = 'Flat'; $btnConnect.FlatAppearance.BorderSize = 0
-$pnlConn.Controls.Add($btnConnect)
+# Gegenstelle
+$lblOther = $rowO.Label; $txtOther = $rowO.Text; $cmbOtherAuth = $rowO.Auth
+$txtOtherUser = $rowO.User; $txtOtherPwd = $rowO.Pwd; $btnCheck = $rowO.Connect
+if ($script:ActiveRole -eq 'Target' -and $script:LoadedState -and $script:LoadedState.SourceServer) {
+    $txtOther.Text = $script:LoadedState.SourceServer
+}
 
 $btnDisconnect = New-Object System.Windows.Forms.Button
 $btnDisconnect.Text = 'Trennen'; $btnDisconnect.Font = $fntSmall
-$btnDisconnect.Size = New-Object System.Drawing.Size(70, 26)
-$btnDisconnect.Location = New-Object System.Drawing.Point(108, 100)
+$btnDisconnect.Size = New-Object System.Drawing.Size(70, 24)
+$btnDisconnect.Location = New-Object System.Drawing.Point(978, ($rowActive - 1))
 $btnDisconnect.BackColor = [System.Drawing.Color]::FromArgb(60,63,70)
 $btnDisconnect.ForeColor = $clrText; $btnDisconnect.FlatStyle = 'Flat'
 $btnDisconnect.FlatAppearance.BorderSize = 0; $btnDisconnect.Enabled = $false
@@ -725,87 +745,93 @@ $pnlConn.Controls.Add($btnDisconnect)
 
 $lblInfo = New-Object System.Windows.Forms.Label
 $lblInfo.Font = $fntSmall; $lblInfo.ForeColor = $clrSubText
-$lblInfo.AutoSize = $false; $lblInfo.Size = New-Object System.Drawing.Size(350, 18)
-$lblInfo.Location = New-Object System.Drawing.Point(190, 105)
+$lblInfo.AutoSize = $false; $lblInfo.Size = New-Object System.Drawing.Size(400, 18)
+$lblInfo.Location = New-Object System.Drawing.Point(1060, ($rowActive + 3))
 $pnlConn.Controls.Add($lblInfo)
 
-# --- Gegenstelle (anderer Server) + Verfahrenswahl ---
-$otherLbl = if ($script:ActiveRole -eq 'Source') { 'Zielserver:' } else { 'Quellserver:' }
-$lblOther = New-Object System.Windows.Forms.Label
-$lblOther.Text = $otherLbl; $lblOther.Font = $fntSmall
-$lblOther.ForeColor = $clrSubText; $lblOther.AutoSize = $true
-$lblOther.Location = New-Object System.Drawing.Point(8, ($rowOther + 3))
-$pnlConn.Controls.Add($lblOther)
-
-$txtOther = New-Object System.Windows.Forms.TextBox
-$txtOther.Font = $fntMono; $txtOther.BackColor = $clrInput; $txtOther.ForeColor = $clrText
-$txtOther.BorderStyle = 'FixedSingle'; $txtOther.Size = New-Object System.Drawing.Size(260, 22)
-$txtOther.Location = New-Object System.Drawing.Point(95, $rowOther)
-if ($script:ActiveRole -eq 'Target' -and $script:LoadedState -and $script:LoadedState.SourceServer) {
-    $txtOther.Text = $script:LoadedState.SourceServer
-}
-$pnlConn.Controls.Add($txtOther)
-
-$btnCheck = New-Object System.Windows.Forms.Button
-$btnCheck.Text = 'Verbindung pruefen'; $btnCheck.Font = $fntSmall
-$btnCheck.Size = New-Object System.Drawing.Size(130, 22)
-$btnCheck.Location = New-Object System.Drawing.Point(390, $rowOther)
-$btnCheck.BackColor = [System.Drawing.Color]::FromArgb(60,63,70)
-$btnCheck.ForeColor = $clrText; $btnCheck.FlatStyle = 'Flat'; $btnCheck.FlatAppearance.BorderSize = 0
-$pnlConn.Controls.Add($btnCheck)
+# Zeile 3: TrustServerCertificate (gilt fuer beide Server) + Verfahren
+$chkTrust = New-Object System.Windows.Forms.CheckBox
+$chkTrust.Text     = 'TrustServerCertificate (SQL 2022 / selbstsigniertes Zertifikat)'
+$chkTrust.Font     = $fntSmall
+$chkTrust.ForeColor= [System.Drawing.Color]::FromArgb(255,193,7)
+$chkTrust.AutoSize = $true
+$chkTrust.Checked  = [bool]$Config.TrustServerCertificate
+$chkTrust.Location = New-Object System.Drawing.Point(95, 70)
+$pnlConn.Controls.Add($chkTrust)
 
 $lblVerf = New-Object System.Windows.Forms.Label
 $lblVerf.Text = 'Verfahren:'; $lblVerf.Font = $fntSmall
 $lblVerf.ForeColor = $clrSubText; $lblVerf.AutoSize = $true
-$lblVerf.Location = New-Object System.Drawing.Point(535, ($rowOther + 3))
+$lblVerf.Location = New-Object System.Drawing.Point(480, 73)
 $pnlConn.Controls.Add($lblVerf)
 
 $cmbVerfahren = New-Object System.Windows.Forms.ComboBox
 $cmbVerfahren.Font = $fntSmall; $cmbVerfahren.BackColor = $clrInput; $cmbVerfahren.ForeColor = $clrText
 $cmbVerfahren.FlatStyle = 'Flat'; $cmbVerfahren.DropDownStyle = 'DropDownList'
 $cmbVerfahren.Size = New-Object System.Drawing.Size(90, 22)
-$cmbVerfahren.Location = New-Object System.Drawing.Point(600, $rowOther)
+$cmbVerfahren.Location = New-Object System.Drawing.Point(545, 70)
 $cmbVerfahren.Items.AddRange(@('Auto','Direkt','Umweg')) | Out-Null
 $cmbVerfahren.SelectedIndex = 0
 $pnlConn.Controls.Add($cmbVerfahren)
 
+# Status der Gegenstelle (Ergebnis von "Verbinden" in der Gegenstellen-Zeile)
 $lblScenario = New-Object System.Windows.Forms.Label
 $lblScenario.Font = $fntSmall; $lblScenario.ForeColor = $clrSubText; $lblScenario.AutoSize = $true
-$lblScenario.Location = New-Object System.Drawing.Point(700, ($rowOther + 3))
-$lblScenario.Text = 'Verfahren noch nicht geprueft'
+$lblScenario.Location = New-Object System.Drawing.Point(980, ($rowOther + 3))
+$lblScenario.Text = 'noch nicht geprueft'
 $pnlConn.Controls.Add($lblScenario)
 
+# Gegenstelle: Erreichbarkeit + Anmeldung pruefen (Verbinden in der Gegenstellen-Zeile)
 $btnCheck.Add_Click({
     $other = $txtOther.Text.Trim()
     if (-not $other) {
-        $lblScenario.Text = 'Bitte Gegenstelle angeben'
+        $lblScenario.Text = 'Bitte Server angeben'
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(255,193,7)
         return
     }
     $lblScenario.Text = 'Pruefe...'; $lblScenario.ForeColor = $clrSubText
-    $reach = Test-ServerReachable -ServerInstance $other -TimeoutMs 3000
-    if ($reach) {
-        $lblScenario.Text = "[OK] $other erreichbar -> DIREKT moeglich"
+    $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+    [System.Windows.Forms.Application]::DoEvents()
+    try {
+        $reach = Test-ServerReachable -ServerInstance $other -TimeoutMs 3000
+        $oSql  = ($cmbOtherAuth.SelectedItem -eq 'SQL-Login')
+        $oCred = $null
+        $loginOk = $false
+        if ($reach) {
+            $tp = @{ ServerInstance = $other; TrustServerCertificate = $chkTrust.Checked }
+            if ($oSql) {
+                $oPwd = ConvertTo-SecureFromText $txtOtherPwd.Text
+                $tp['AuthMode'] = 'SqlLogin'; $tp['SqlUser'] = $txtOtherUser.Text.Trim(); $tp['SqlPassword'] = $oPwd
+                if ($oPwd) { $oCred = New-Object System.Management.Automation.PSCredential($txtOtherUser.Text.Trim(), $oPwd) }
+            }
+            $loginOk = Test-SqlConnection @tp
+        }
+    } finally { $form.Cursor = [System.Windows.Forms.Cursors]::Default }
+
+    if ($reach -and $loginOk) {
+        $lblScenario.Text = "[OK] $other verbunden -> DIREKT moeglich"
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(40,167,69)
         # Exchange-Pfad automatisch auf das Backup-Verzeichnis des Ziels setzen
         # (Admin-Freigabe, z.B. \\SERVER\D$\MSSQL\Backup) - nur im Quell-Modus.
         if ($script:ActiveRole -eq 'Source') {
             try {
-                $unc = Get-TargetBackupUncPath -ServerInstance $other -TrustServerCertificate:$chkTrust.Checked
+                $up = @{ ServerInstance = $other; TrustServerCertificate = $chkTrust.Checked }
+                if ($oCred) { $up['SqlCredential'] = $oCred }
+                $unc = Get-TargetBackupUncPath @up
                 if ($unc) {
                     $txtExPath.Text = $unc
-                    $lblScenario.Text = "[OK] $other erreichbar -> DIREKT; Exchange-Pfad gesetzt"
+                    $lblScenario.Text = "[OK] $other verbunden -> DIREKT; Exchange-Pfad gesetzt"
                 }
             } catch { }
         }
+    } elseif ($reach) {
+        $lblScenario.Text = "[!] $other erreichbar, Anmeldung fehlgeschlagen -> UMWEG (zweistufig)"
+        $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(220,53,69)
     } else {
         $lblScenario.Text = "[!] $other nicht erreichbar -> UMWEG (zweistufig)"
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(255,140,0)
     }
 })
-
-# pnlConn Standardhoehe anpassen
-$pnlConn.Height = 135
 
 # --- Globale Auswahl-Leiste (alle Tabs) ---
 $pnlGlobalSel           = New-Object System.Windows.Forms.Panel
@@ -1451,6 +1477,9 @@ $btnMigrate.Add_Click({
     }
     $script:Scenario     = $scenario
     $script:_DirectTrust = $chkTrust.Checked
+    $script:OtherAuth    = $cmbOtherAuth.SelectedItem
+    $script:OtherUser    = $txtOtherUser.Text.Trim()
+    $script:OtherPwdSS   = ConvertTo-SecureFromText $txtOtherPwd.Text
 
     # Zusammenfassung
     $phaseInfo = if ($script:ActiveRole -eq 'Source') {
@@ -1509,7 +1538,7 @@ $btnMigrate.Add_Click({
     Invoke-BackgroundJob -ScriptBlock {
         param($srv, $role, $dbs, $exPath, $lPath, $method, $detach,
               $reatt, $whatif, $chks, $scenario, $loadedState, $cfg,
-              $otherSrv, $otherTrust)
+              $otherSrv, $otherTrust, $otherAuth, $otherUser, $otherPwd)
 
         $done = 0
 
@@ -1520,8 +1549,12 @@ $btnMigrate.Add_Click({
             $sqlLoginsPresent = $false
             if ($chks['Logins']) { try { $sqlLoginsPresent = Test-SourceHasSqlLogins -SourceServer $srv } catch { } }
 
-            $tgtConn = New-SqlConnection -ServerInstance $otherSrv -AuthMode 'Windows' `
-                -ConnectTimeout $cfg.ConnectionTimeout -TrustServerCertificate $otherTrust
+            $tp = @{ ServerInstance = $otherSrv; ConnectTimeout = $cfg.ConnectionTimeout
+                     TrustServerCertificate = $otherTrust }
+            if ($otherAuth -eq 'SQL-Login') {
+                $tp['AuthMode'] = 'SqlLogin'; $tp['SqlUser'] = $otherUser; $tp['SqlPassword'] = $otherPwd
+            }
+            $tgtConn = New-SqlConnection @tp
             $tgtConn = if ($tgtConn -is [array]) { $tgtConn[0] } else { $tgtConn }
 
             Invoke-DirectMigration -SourceServer $srv -TargetServer $tgtConn -Databases $dbs `
@@ -1765,7 +1798,8 @@ $btnMigrate.Add_Click({
         $srcSrv, $activeRole, $selDbs, $exPath, $lPath, $method,
         ($cmbMethod.SelectedIndex -eq 1), $reattach, $whatif, $migChks,
         $script:Scenario, $loadedState, $cfgRef,
-        $script:OtherServer, $script:_DirectTrust
+        $script:OtherServer, $script:_DirectTrust,
+        $script:OtherAuth, $script:OtherUser, $script:OtherPwdSS
     ) -OnComplete {
         param($r)
         $btnMigrate.Invoke([Action]{ $btnMigrate.Enabled = $true })

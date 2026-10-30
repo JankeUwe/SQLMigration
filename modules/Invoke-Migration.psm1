@@ -94,10 +94,13 @@ function Get-TargetBackupUncPath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$ServerInstance,
+        [System.Management.Automation.PSCredential]$SqlCredential,
         [switch]$TrustServerCertificate
     )
     try {
-        $conn = Connect-DbaInstance -SqlInstance $ServerInstance -TrustServerCertificate:$TrustServerCertificate -ErrorAction Stop
+        $cp = @{ SqlInstance = $ServerInstance; TrustServerCertificate = $TrustServerCertificate.IsPresent; ErrorAction = 'Stop' }
+        if ($SqlCredential) { $cp['SqlCredential'] = $SqlCredential }
+        $conn = Connect-DbaInstance @cp
         $bdir = (Get-DbaDefaultPath -SqlInstance $conn).Backup
         if (-not $bdir) { return $null }
         $unc = ConvertTo-AdminShareUnc -ComputerName $ServerInstance -LocalPath $bdir
@@ -633,8 +636,14 @@ function Invoke-LoginMigration {
 
     Write-MigrationLog -Level 'STEP' -Category 'LOGIN' -Message "Starte Login-Migration"
     try {
-        $params = @{ Source = $SourceServer; Destination = $TargetServer; ErrorAction = 'Stop' }
+        $params = @{ Source = $SourceServer; Destination = $TargetServer; ErrorAction = 'Stop'; ExcludeSystemLogins = $true }
         if ($Logins)   { $params['Login']    = $Logins }
+        else {
+            $sysNames = @(Get-DbaLogin -SqlInstance $SourceServer -ErrorAction SilentlyContinue |
+                Where-Object { $_.ID -eq 1 -or $_.Name -match '^(##|NT[ -]|BUILTIN.)' } |
+                ForEach-Object { $_.Name })
+            if ($sysNames) { $params['ExcludeLogin'] = $sysNames }
+        }
         # Copy-DbaLogin uebernimmt SIDs standardmaessig (nur -NewSid erzeugt neue);
         # -SyncSids existiert dort nicht. $SyncSids bleibt als Schalter nur der Kompatibilitaet halber.
         if ($WhatIf)   { $params['WhatIf']   = $true }
@@ -927,6 +936,12 @@ function Export-MigrationLogins {
             EnableException = $true
         }
         if ($Logins) { $p['Login'] = $Logins }
+        else {
+            $sysNames = @(Get-DbaLogin -SqlInstance $SourceServer -ErrorAction SilentlyContinue |
+                Where-Object { $_.ID -eq 1 -or $_.Name -match '^(##|NT[ -]|BUILTIN.)' } |
+                ForEach-Object { $_.Name })
+            if ($sysNames) { $p['ExcludeLogin'] = $sysNames }
+        }
         $null = Export-DbaLogin @p
         Write-MigrationLog -Level 'SUCCESS' -Category 'LOGIN-EXPORT' -Message "Login-Skript erzeugt" -Detail $scriptFile
         return $scriptFile
@@ -1256,6 +1271,16 @@ function Invoke-MigrationFinalize {
 
     $instance = $TargetServer.Name
 
+    # Zielverbindung mit SQL-Login: Zugangsdaten aus der bestehenden SMO-Verbindung uebernehmen,
+    # sonst laufen die sqmSQLTool-Funktionen mit Windows-Auth und scheitern.
+    $credParam = @{}
+    try {
+        $cc = $TargetServer.ConnectionContext
+        if (-not $cc.LoginSecure -and $cc.Login -and $cc.SecurePassword) {
+            $credParam['SqlCredential'] = New-Object System.Management.Automation.PSCredential($cc.Login, $cc.SecurePassword)
+        }
+    } catch { }
+
     if (-not (Get-Module -Name sqmSQLTool)) {
         $src = Get-SqmSqlToolSource
         if ($src) {
@@ -1276,7 +1301,7 @@ function Invoke-MigrationFinalize {
     # 1. Standardisierung
     Write-MigrationLog -Level 'STEP' -Category 'STANDARD' -Message "Datenbank-Standardisierung: $($Databases -join ', ')"
     try {
-        $rows = @(Invoke-sqmDatabaseStandardization -SqlInstance $instance -Database $Databases `
+        $rows = @(Invoke-sqmDatabaseStandardization -SqlInstance $instance @credParam -Database $Databases `
                     -WhatIf:$WhatIf -Confirm:$false -EnableException)
         foreach ($r in $rows) {
             $lvl = if ($r.Status -eq 'Failed') { 'WARN' } else { 'INFO' }
@@ -1325,7 +1350,7 @@ WHERE gs.primary_replica = @@SERVERNAME
     $ag = $ags[0]
     Write-MigrationLog -Level 'STEP' -Category 'AG' -Message "Nehme Datenbanken in AG '$ag' auf: $($Databases -join ', ')"
     try {
-        $res = @(Add-sqmDatabaseToAG -SqlInstance $instance -AvailabilityGroup $ag -Database $Databases `
+        $res = @(Add-sqmDatabaseToAG -SqlInstance $instance @credParam -AvailabilityGroup $ag -Database $Databases `
                     -WhatIf:$WhatIf -EnableException)
         foreach ($r in $res) {
             $db  = if ($r.PSObject.Properties['Database']) { $r.Database } else { '' }

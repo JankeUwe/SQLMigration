@@ -73,8 +73,9 @@ function Test-SqlConnection {
             $cred = New-Object System.Management.Automation.PSCredential($SqlUser, $SqlPassword)
             $params['SqlCredential'] = $cred
         }
-        $result = Test-DbaConnection @params -ErrorAction Stop
-        return $result.ConnectSuccess
+        # Test-DbaConnection liefert fuer SQL-Login teils kein ConnectSuccess; daher echte Verbindung + SELECT 1
+        $srv = Connect-DbaInstance @params -ErrorAction Stop
+        return ([int]$srv.ConnectionContext.ExecuteScalar('SELECT 1') -eq 1)
     }
     catch {
         return $false

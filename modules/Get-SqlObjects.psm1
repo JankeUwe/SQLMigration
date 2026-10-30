@@ -33,10 +33,12 @@ function Get-SqlLogins {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Server)
     try {
+        # Systemlogins (sa, ##...##, NT SERVICE\*, NT AUTHORITY\* bzw. NT-AUTORITAET\*, BUILTIN\*) werden nicht angeboten
         $logins = Get-DbaLogin -SqlInstance $Server -ErrorAction Stop |
+                  Where-Object { $_.ID -ne 1 -and $_.Name -notmatch '^(##|NT[ -]|BUILTIN.)' } |
                   Select-Object Name, LoginType, IsDisabled, IsLocked,
                                 HasAccess, MustChangePassword, CreateDate,
-                                @{N='IsSystem';E={$_.Name -like '##*' -or $_.Name -eq 'sa' -or $_.Name -like 'NT *' -or $_.Name -like 'BUILTIN*'}}
+                                @{N='IsSystem';E={$false}}
         Write-MigrationLog -Level 'INFO' -Category 'GET-LOGIN' `
             -Message "Logins gelesen: $($logins.Count)" -Detail $Server.Name
         return $logins

@@ -15,6 +15,9 @@ All notable changes to this project will be documented in this file.
 - Title bar now uses the role colour (blue = source, green = target); log path no longer overlaps the version label
 - Quellserver and Zielserver are two separate rows, always source on top; the connected server's row carries the Auth fields, the counterpart row carries "Verbindung pruefen" and Verfahren
 - TrustServerCertificate checkbox aligned with the server text boxes; Exchange and local backup path boxes aligned in one column; grid rows white; unselected tabs light grey
+- Source and target server each have their own login (Windows or SQL-Login) and their own Verbinden button on the server row; the counterpart's Verbinden checks reachability and login, and the Direct path connects to it with those credentials
+- Logins: system logins (sa, ##...##, NT SERVICE / NT AUTHORITY incl. German NT-AUTORITAET, BUILTIN) are no longer listed and are excluded from the Direct (Copy-DbaLogin) and detour (Export-DbaLogin) transfer
+- Final step passes the target's SQL-Login on to sqmSQLTool; Test-SqlConnection now really connects (Test-DbaConnection reported False for working SQL logins)
 
 ## [1.2.0.0] - 2026-06-21
 
