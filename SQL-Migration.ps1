@@ -1469,9 +1469,26 @@ $btnMigrate.Add_Click({
         if ($kv.Value) { $summary += "  [x] $($kv.Key)`n" }
     }
 
+    # sqmSQLTool wird im Abschluss (Standardisierung + Always-On-Aufnahme) gebraucht.
+    # Der Abschluss laeuft im Direkt-Verfahren und in Phase 2 (Ziel).
+    $finalizeRuns = $migChks['Datenbanken'] -and ($scenario -eq 'Direct' -or $script:ActiveRole -ne 'Source')
+    $icon = 'Question'
+    if ($finalizeRuns) {
+        $sqm = Get-SqmSqlToolSource
+        if ($sqm) {
+            $summary += "`nAbschluss:   Standardisierung + ggf. Always-On-Aufnahme (sqmSQLTool $($sqm.Version))`n"
+        } else {
+            $icon = 'Warning'
+            $summary += "`nWARNUNG: sqmSQLTool ist auf diesem Rechner nicht installiert.`n" +
+                        "Der Abschluss faellt auf eine einfache Bereinigung (Orphans + Owner) zurueck;`n" +
+                        "Standardisierung und Always-On-Aufnahme (Add-sqmDatabaseToAG) entfallen.`n"
+            Update-StatusBar "Warnung: sqmSQLTool fehlt - Standardisierung/AG-Aufnahme entfallen" 'Warn'
+        }
+    }
+
     $resp = [System.Windows.Forms.MessageBox]::Show(
         "Migration starten?`n`n$summary",
-        'Bestaetigung','YesNo','Question')
+        'Bestaetigung','YesNo',$icon)
     if ($resp -ne 'Yes') { return }
 
     $btnMigrate.Enabled = $false

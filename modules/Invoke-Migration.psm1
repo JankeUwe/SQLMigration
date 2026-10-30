@@ -1223,6 +1223,22 @@ function Invoke-DirectDatabaseTransfer {
 }
 
 # ---------------------------------------------------------------------------
+# sqmSQLTool-Pruefung: geladen / installiert / Quelle neben dem Tool.
+# Liefert das Modul (Name, Version, Pfad) oder $null.
+# ---------------------------------------------------------------------------
+function Get-SqmSqlToolSource {
+    [CmdletBinding()]
+    param()
+    $loaded = Get-Module -Name sqmSQLTool | Select-Object -First 1
+    if ($loaded) { return $loaded }
+    $installed = Get-Module -ListAvailable -Name sqmSQLTool | Sort-Object Version -Descending | Select-Object -First 1
+    if ($installed) { return $installed }
+    $local = Join-Path $PSScriptRoot '..\..\sqmSQLTool\sqmSQLTool.psd1'
+    if (Test-Path $local) { return (Get-Module -ListAvailable -Name (Resolve-Path $local).Path | Select-Object -First 1) }
+    return $null
+}
+
+# ---------------------------------------------------------------------------
 # ABSCHLUSS: Datenbank-Standardisierung + Aufnahme in Always On
 # Laeuft ganz am Ende (nach Logins/Objekten), weil verwaiste User erst nach
 # dem Login-Transfer repariert werden koennen.
@@ -1241,13 +1257,10 @@ function Invoke-MigrationFinalize {
     $instance = $TargetServer.Name
 
     if (-not (Get-Module -Name sqmSQLTool)) {
-        $local = Join-Path $PSScriptRoot '..\..\sqmSQLTool\sqmSQLTool.psd1'
-        try {
-            if (Get-Module -ListAvailable -Name sqmSQLTool) { Import-Module sqmSQLTool -DisableNameChecking -ErrorAction Stop }
-            elseif (Test-Path $local)                       { Import-Module $local -DisableNameChecking -ErrorAction Stop }
-        }
-        catch {
-            Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' -Message "sqmSQLTool konnte nicht geladen werden" -Detail $_.Exception.Message
+        $src = Get-SqmSqlToolSource
+        if ($src) {
+            try { Import-Module $src.Path -DisableNameChecking -ErrorAction Stop }
+            catch { Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' -Message "sqmSQLTool konnte nicht geladen werden" -Detail $_.Exception.Message }
         }
     }
 
@@ -1389,6 +1402,7 @@ function Invoke-DirectMigration {
 }
 
 Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,
+                               Get-SqmSqlToolSource,
                                Invoke-MigrationFinalize,
                                Invoke-DatabaseMigrationDetachAttach,
                                Invoke-PostRestoreCleanup,
