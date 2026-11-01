@@ -85,8 +85,9 @@ Entscheidung übersteuern; `Auto` wählt anhand der Erreichbarkeit.
 
 1. `Start-SQLMigration.cmd` als Administrator starten → Rolle **Quelle** wählen.
 2. **Server\Instanz** ist mit dem aktuellen Rechner vorbelegt – prüfen/anpassen, **Auth** wählen, **Verbinden**.
-3. Objekte werden geladen; in den Reitern (Datenbanken, Logins, …) die zu migrierenden Einträge ankreuzen
-   (Buttons *Alle/Keine* je Reiter bzw. *Alle Tabs*).
+3. Objekte werden geladen; im Reiter **Datenbanken** die zu migrierenden DBs ankreuzen (Buttons *Alle/Keine*).
+   Die übrigen Reiter (Logins, DB-User, Linked Server, …) sind reine Ansichten; welche Objekttypen migriert werden,
+   bestimmen die Checkboxen **Migrieren:** unten (inkl. *Alle/Keine*). Ein gewählter Typ wird komplett migriert.
 4. Unten **Methode** wählen:
    - **Backup / Restore** (empfohlen, Standard) – DB bleibt online.
    - **Detach / Attach** – DB wird offline genommen; optional *Re-Attach nach Detach* auf der Quelle.

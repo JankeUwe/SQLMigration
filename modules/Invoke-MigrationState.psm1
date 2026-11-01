@@ -78,7 +78,7 @@ function Get-MigrationScenario {
                                       -TimeoutMs $TimeoutMs
     if (-not $reachable) {
         Write-MigrationLog -Level 'INFO' -Category 'SCENARIO' `
-            -Message "Zielserver nicht erreichbar -> TwoPhase" `
+            -Message "Target server not reachable -> TwoPhase" `
             -Detail $TargetServerInstance
         return 'TwoPhase'
     }
@@ -86,7 +86,7 @@ function Get-MigrationScenario {
     # UNC unter Admin-Credentials testbar, aber Dienstkonto-Zugriff
     # wird erst beim echten Backup getestet (Option B)
     Write-MigrationLog -Level 'INFO' -Category 'SCENARIO' `
-        -Message "Zielserver erreichbar -> pruefe Direct/TwoPhase beim Backup" `
+        -Message "Target server reachable -> Direct/TwoPhase is decided at backup time" `
         -Detail $TargetServerInstance
     return 'Direct'
 }
@@ -144,7 +144,7 @@ function Write-MigrationState {
     $state | ConvertTo-Json -Depth 10 | Out-File -FilePath $stateFile -Encoding UTF8 -Force
 
     Write-MigrationLog -Level 'SUCCESS' -Category 'STATE' `
-        -Message "Zustandsdatei geschrieben" -Detail $stateFile
+        -Message "State file written" -Detail $stateFile
     return $stateFile
 }
 
@@ -167,12 +167,12 @@ function Read-MigrationState {
         $raw   = Get-Content $stateFile -Raw -Encoding UTF8
         $state = $raw | ConvertFrom-Json
         Write-MigrationLog -Level 'INFO' -Category 'STATE' `
-            -Message "Zustandsdatei gelesen" `
-            -Detail "Erstellt: $($state.CreatedAt) | Quelle: $($state.SourceServer)"
+            -Message "State file read" `
+            -Detail "Created: $($state.CreatedAt) | Source: $($state.SourceServer)"
         return $state
     } catch {
         Write-MigrationLog -Level 'ERROR' -Category 'STATE' `
-            -Message "Zustandsdatei unlesbar" -Detail $_.Exception.Message
+            -Message "State file unreadable" -Detail $_.Exception.Message
         return $null
     }
 }
@@ -199,10 +199,10 @@ function Complete-MigrationState {
         $ht['Phase2CompletedAt'] = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
         $ht | ConvertTo-Json -Depth 10 | Out-File -FilePath $stateFile -Encoding UTF8 -Force
         Write-MigrationLog -Level 'SUCCESS' -Category 'STATE' `
-            -Message "Phase 2 in Zustandsdatei vermerkt"
+            -Message "Phase 2 recorded in state file"
     } catch {
         Write-MigrationLog -Level 'WARN' -Category 'STATE' `
-            -Message "Phase2-Vermerk fehlgeschlagen" -Detail $_.Exception.Message
+            -Message "Recording phase 2 failed" -Detail $_.Exception.Message
     }
 }
 

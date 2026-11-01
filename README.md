@@ -10,7 +10,7 @@ PowerShell WinForms-Tool zur zweiphasigen SQL Server Datenbankmigrationen — en
 
 ## Features
 
-- **WinForms GUI**: Rollenauswahl (Quelle / Ziel / Automatisch) beim Start, zeigt nur die jeweils relevante Seite. Objektauswahl je Typ über Reiter (Buttons *Alle/Keine* je Reiter bzw. *Alle Tabs*).
+- **WinForms GUI**: Rollenauswahl (Quelle / Ziel / Automatisch) beim Start, zeigt nur die jeweils relevante Seite. Datenbanken werden im Reiter *Datenbanken* einzeln gewählt (Buttons *Alle/Keine*); alle anderen Objekttypen werden über die Checkboxen *Migrieren:* unten ein- bzw. ausgeschaltet und dann komplett migriert.
 - **Zwei Verfahren mit automatischer Erkennung** (TCP-Erreichbarkeit der Gegenstelle; per *Verfahren* `Auto`/`Direkt`/`Umweg` übersteuerbar):
   - **Direkt** – Quelle und Ziel gleichzeitig erreichbar → **ein Durchlauf** vom Quellserver; Objekte direkt via `Copy-Dba*`. Transport: lokales Backup → **robocopy in die Admin-Freigabe des Ziels** (UNC), Restore über den lokalen Zielpfad.
   - **Umweg (TwoPhase)** – Quelle/Ziel getrennt (z. B. verschiedene Domänen): Phase 1 Backup + **Skript-Export** aller Objekte, Phase 2 Restore + **Skript-Import** (`Invoke-DbaQuery`). State-Übergabe per JSON-Zustandsdatei über den Exchange-Pfad.

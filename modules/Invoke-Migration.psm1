@@ -29,7 +29,7 @@ function Ensure-LocalBackupPath {
     if (-not (Test-Path $Path)) {
         New-Item -ItemType Directory -Path $Path -Force -ErrorAction Stop | Out-Null
         Write-MigrationLog -Level 'INFO' -Category 'PATH' `
-            -Message "Lokales Backup-Verzeichnis angelegt" -Detail $Path
+            -Message "Local backup directory created" -Detail $Path
     }
 }
 
@@ -45,7 +45,7 @@ function Get-ServerBackupDirectory {
     }
     catch {
         Write-MigrationLog -Level 'WARN' -Category 'PATH' `
-            -Message "Server-Backup-Verzeichnis nicht ermittelbar, nutze Fallback" `
+            -Message "Server backup directory could not be determined, using fallback" `
             -Detail $_.Exception.Message
     }
     return $Fallback
@@ -104,12 +104,12 @@ function Get-TargetBackupUncPath {
         $bdir = (Get-DbaDefaultPath -SqlInstance $conn).Backup
         if (-not $bdir) { return $null }
         $unc = ConvertTo-AdminShareUnc -ComputerName $ServerInstance -LocalPath $bdir
-        Write-MigrationLog -Level 'INFO' -Category 'PATH' -Message "Ziel-Backup-Pfad ermittelt" -Detail $unc
+        Write-MigrationLog -Level 'INFO' -Category 'PATH' -Message "Target backup path determined" -Detail $unc
         return $unc
     }
     catch {
         Write-MigrationLog -Level 'WARN' -Category 'PATH' `
-            -Message "Ziel-Backup-Pfad nicht ermittelbar" -Detail $_.Exception.Message
+            -Message "Target backup path could not be determined" -Detail $_.Exception.Message
         return $null
     }
 }
@@ -148,7 +148,7 @@ function Copy-FileRobocopy {
     $existing = Join-Path $DestDir $name
     if ((Test-Path -LiteralPath $existing) -and
         ((Get-Item -LiteralPath $existing).Length -eq (Get-Item -LiteralPath $SourceFile).Length)) {
-        Write-MigrationLog -Level 'INFO' -Category 'COPY' -Message "Datei liegt bereits am Ziel (gleiche Groesse) - Kopie uebersprungen" -Detail $existing
+        Write-MigrationLog -Level 'INFO' -Category 'COPY' -Message "File already at target (same size) - copy skipped" -Detail $existing
         return $existing
     }
     # robocopy mit umgeleiteter Ausgabe starten und den Prozentwert aus dessen Ausgabe lesen
@@ -193,11 +193,11 @@ function Copy-FileRobocopy {
     $rcOut = @($rcText -split "[`r`n]+")
     if ($code -ge 8) {
         $tail = (($rcOut | ForEach-Object { "$_".Trim() } | Where-Object { $_ }) | Select-Object -Last 6) -join ' | '
-        throw "robocopy fehlgeschlagen (ExitCode $code): '$name' -> '$DestDir'. robocopy: $tail"
+        throw "robocopy failed (exit code $code): '$name' -> '$DestDir'. robocopy: $tail"
     }
     $dest = Join-Path $DestDir $name
     if (-not (Test-Path $dest)) {
-        throw "robocopy: Zieldatei fehlt nach Kopie: $dest"
+        throw "robocopy: target file missing after copy: $dest"
     }
     return $dest
 }
@@ -247,13 +247,13 @@ function Invoke-DatabaseMigrationBackupRestore {
             if ($Mode -in 'Full','Phase1') {
 
                 if ($ProgressCallback) { $ProgressCallback.Invoke("Backup: $dbName") }
-                Write-MigrationLog -Level 'STEP' -Category 'BACKUP' -Message "Starte Backup: $dbName"
+                Write-MigrationLog -Level 'STEP' -Category 'BACKUP' -Message "Starting backup: $dbName"
 
                 if (-not $WhatIf) {
                     $localDir = Get-ServerBackupDirectory -Server $SourceServer -Fallback $LocalBackupPath
                     Ensure-LocalBackupPath -Path $localDir
                     Write-MigrationLog -Level 'INFO' -Category 'BACKUP' `
-                        -Message "Backup in lokales Server-Verzeichnis" -Detail $localDir
+                        -Message "Backup to local server directory" -Detail $localDir
 
                     $bpResult = Backup-DbaDatabase `
                         -SqlInstance      $SourceServer `
@@ -265,28 +265,28 @@ function Invoke-DatabaseMigrationBackupRestore {
                     $localFile = $bpResult.BackupPath
                     $stepResult.BackupOK = $true
                     Write-MigrationLog -Level 'SUCCESS' -Category 'BACKUP' `
-                        -Message "Backup lokal OK: $dbName" -Detail $localFile
+                        -Message "Local backup OK: $dbName" -Detail $localFile
 
                     if ($VerifyBackup) {
-                        Write-MigrationLog -Level 'INFO' -Category 'BACKUP' -Message "Verifiziere Backup: $dbName"
+                        Write-MigrationLog -Level 'INFO' -Category 'BACKUP' -Message "Verifying backup: $dbName"
                         $null = Test-DbaLastBackup -SqlInstance $SourceServer -Database $dbName -ErrorAction SilentlyContinue
                     }
 
                     # robocopy auf Exchange-Pfad (Admin-Kontext -> kein Dienstkonto-Problem)
-                    if ($ProgressCallback) { $ProgressCallback.Invoke("Kopiere (robocopy): $dbName") }
+                    if ($ProgressCallback) { $ProgressCallback.Invoke("Copying (robocopy): $dbName") }
                     $destFile = Copy-FileRobocopy -SourceFile $localFile -DestDir $ExchangePath
                     $stepResult.BackupFile = $destFile
                     $stepResult.CopyOK     = $true
                     Write-MigrationLog -Level 'SUCCESS' -Category 'COPY' `
-                        -Message "Backup per robocopy auf Exchange-Pfad" -Detail $destFile
+                        -Message "Backup copied to exchange path via robocopy" -Detail $destFile
                     Write-MigrationLog -Level 'INFO' -Category 'BACKUP' `
-                        -Message "Lokale Sicherung verbleibt im Server-Backup-Verzeichnis" -Detail $localFile
+                        -Message "Local copy remains in the server backup directory" -Detail $localFile
                 }
                 else {
                     $stepResult.BackupOK   = $true
                     $stepResult.CopyOK     = $true
                     $stepResult.BackupFile = Join-Path $ExchangePath "$dbName.bak"
-                    Write-MigrationLog -Level 'INFO' -Category 'BACKUP' -Message "[WHATIF] Backup lokal + robocopy: $dbName"
+                    Write-MigrationLog -Level 'INFO' -Category 'BACKUP' -Message "[WHATIF] Local backup + robocopy: $dbName"
                 }
             }
 
@@ -297,7 +297,7 @@ function Invoke-DatabaseMigrationBackupRestore {
 
                 if ($ProgressCallback) { $ProgressCallback.Invoke("Restore: $dbName") }
                 Write-MigrationLog -Level 'STEP' -Category 'RESTORE' `
-                    -Message "Starte Restore: $dbName auf $($TargetServer.Name)"
+                    -Message "Starting restore: $dbName on $($TargetServer.Name)"
 
                 if (-not $WhatIf) {
                     # Quelle der Backup-Datei
@@ -308,15 +308,15 @@ function Invoke-DatabaseMigrationBackupRestore {
                             Sort-Object LastWriteTime -Descending |
                             Select-Object -First 1 -ExpandProperty FullName
                     }
-                    if (-not $srcFile) { throw "Keine Backup-Datei fuer '$dbName' im Exchange-Pfad gefunden." }
+                    if (-not $srcFile) { throw "No backup file for '$dbName' found in the exchange path." }
 
                     # robocopy in lokales Backup-Verzeichnis des Zielservers
                     $localDir  = Get-ServerBackupDirectory -Server $TargetServer -Fallback $LocalBackupPath
                     Ensure-LocalBackupPath -Path $localDir
-                    if ($ProgressCallback) { $ProgressCallback.Invoke("Kopiere (robocopy): $dbName") }
+                    if ($ProgressCallback) { $ProgressCallback.Invoke("Copying (robocopy): $dbName") }
                     $localCopy = Copy-FileRobocopy -SourceFile $srcFile -DestDir $localDir
                     Write-MigrationLog -Level 'SUCCESS' -Category 'COPY' `
-                        -Message "Backup per robocopy lokal bereitgestellt" -Detail $localCopy
+                        -Message "Backup staged locally via robocopy" -Detail $localCopy
 
                     $null = Restore-DbaDatabase `
                         -SqlInstance  $TargetServer `
@@ -329,14 +329,14 @@ function Invoke-DatabaseMigrationBackupRestore {
                 }
                 else {
                     $stepResult.RestoreOK = $true
-                    Write-MigrationLog -Level 'INFO' -Category 'RESTORE' -Message "[WHATIF] robocopy + Restore: $dbName"
+                    Write-MigrationLog -Level 'INFO' -Category 'RESTORE' -Message "[WHATIF] robocopy + restore: $dbName"
                 }
             }
         }
         catch {
             $stepResult.Error = $_.Exception.Message
             Write-MigrationLog -Level 'ERROR' -Category 'DB-MIGRATION' `
-                -Message "Fehler bei $dbName" -Detail $_.Exception.Message
+                -Message "Error for $dbName" -Detail $_.Exception.Message
         }
         finally {
             $sw.Stop()
@@ -394,7 +394,7 @@ function Invoke-DatabaseMigrationDetachAttach {
                 $allFiles= @($dbFiles) + @($logFiles)
 
                 if ($ProgressCallback) { $ProgressCallback.Invoke("Detach: $dbName") }
-                Write-MigrationLog -Level 'STEP' -Category 'DETACH' -Message "Detach: $dbName von $($SourceServer.Name)"
+                Write-MigrationLog -Level 'STEP' -Category 'DETACH' -Message "Detach: $dbName from $($SourceServer.Name)"
 
                 if (-not $WhatIf) {
                     Detach-DbaDatabase -SqlInstance $SourceServer -Database $dbName -Force -ErrorAction Stop | Out-Null
@@ -405,7 +405,7 @@ function Invoke-DatabaseMigrationDetachAttach {
                     Write-MigrationLog -Level 'INFO' -Category 'DETACH' -Message "[WHATIF] Detach: $dbName"
                 }
 
-                if ($ProgressCallback) { $ProgressCallback.Invoke("Kopiere (robocopy): $dbName") }
+                if ($ProgressCallback) { $ProgressCallback.Invoke("Copying (robocopy): $dbName") }
                 $destFiles = [System.Collections.Generic.List[string]]::new()
 
                 if (-not $WhatIf) {
@@ -424,16 +424,16 @@ function Invoke-DatabaseMigrationDetachAttach {
                 }
 
                 if ($ReattachOnSource -and -not $WhatIf -and $stepResult.DetachOK) {
-                    if ($ProgressCallback) { $ProgressCallback.Invoke("Re-Attach Quelle: $dbName") }
+                    if ($ProgressCallback) { $ProgressCallback.Invoke("Re-attach on source: $dbName") }
                     try {
                         $reattachQuery = Build-AttachQuery -DbName $dbName -Files $allFiles
                         Invoke-DbaQuery -SqlInstance $SourceServer -Query $reattachQuery -ErrorAction Stop
                         $stepResult.ReattachOK = $true
-                        Write-MigrationLog -Level 'SUCCESS' -Category 'REATTACH' -Message "Re-Attach Quelle OK: $dbName"
+                        Write-MigrationLog -Level 'SUCCESS' -Category 'REATTACH' -Message "Re-attach on source OK: $dbName"
                     }
                     catch {
                         Write-MigrationLog -Level 'WARN' -Category 'REATTACH' `
-                            -Message "Re-Attach Quelle fehlgeschlagen: $dbName" -Detail $_.Exception.Message
+                            -Message "Re-attach on source failed: $dbName" -Detail $_.Exception.Message
                     }
                 }
             }
@@ -444,7 +444,7 @@ function Invoke-DatabaseMigrationDetachAttach {
             if ($Mode -in 'Full','Phase2') {
 
                 if ($ProgressCallback) { $ProgressCallback.Invoke("Attach: $dbName") }
-                Write-MigrationLog -Level 'STEP' -Category 'ATTACH' -Message "Attach: $dbName auf $($TargetServer.Name)"
+                Write-MigrationLog -Level 'STEP' -Category 'ATTACH' -Message "Attach: $dbName on $($TargetServer.Name)"
 
                 # Quell-Dateien (auf Exchange) ermitteln
                 $exFiles = if ($stepResult.DestFiles -and $stepResult.DestFiles.Count -gt 0) {
@@ -469,7 +469,7 @@ function Invoke-DatabaseMigrationDetachAttach {
                         $lf = Copy-FileRobocopy -SourceFile $f -DestDir $targetDir
                         $localFiles.Add($lf)
                         Write-MigrationLog -Level 'INFO' -Category 'COPY' `
-                            -Message "robocopy ans Ziel: $(Split-Path $f -Leaf)" -Detail $lf
+                            -Message "robocopy to target: $(Split-Path $f -Leaf)" -Detail $lf
                     }
 
                     $attachQuery = Build-AttachQuery -DbName $dbName -Files $localFiles.ToArray()
@@ -479,14 +479,14 @@ function Invoke-DatabaseMigrationDetachAttach {
                     Write-MigrationLog -Level 'SUCCESS' -Category 'ATTACH' -Message "Attach OK: $dbName"
                 } else {
                     $stepResult.AttachOK = $true
-                    Write-MigrationLog -Level 'INFO' -Category 'ATTACH' -Message "[WHATIF] robocopy + Attach: $dbName"
+                    Write-MigrationLog -Level 'INFO' -Category 'ATTACH' -Message "[WHATIF] robocopy + attach: $dbName"
                 }
             }
         }
         catch {
             $stepResult.Error = $_.Exception.Message
             Write-MigrationLog -Level 'ERROR' -Category 'DETACH-ATTACH' `
-                -Message "Fehler bei $dbName" -Detail $_.Exception.Message
+                -Message "Error for $dbName" -Detail $_.Exception.Message
         }
         finally {
             $sw.Stop()
@@ -540,42 +540,42 @@ function Invoke-PostRestoreCleanup {
     }
     catch {
         Write-MigrationLog -Level 'WARN' -Category 'OWNER' `
-            -Message "sa-Login konnte nicht ermittelt werden" -Detail $_.Exception.Message
+            -Message "Could not determine the sa login" -Detail $_.Exception.Message
     }
 
     foreach ($db in $Databases) {
 
         # 1. Verwaiste DB-User reparieren
-        Write-MigrationLog -Level 'STEP' -Category 'ORPHAN' -Message "Repariere verwaiste DB-User: $db"
+        Write-MigrationLog -Level 'STEP' -Category 'ORPHAN' -Message "Repairing orphaned DB users: $db"
         if (-not $WhatIf) {
             try {
                 $rep = Repair-DbaDbOrphanUser -SqlInstance $TargetServer -Database $db -ErrorAction Stop
                 $cnt = @($rep).Count
                 Write-MigrationLog -Level 'SUCCESS' -Category 'ORPHAN' `
-                    -Message "Verwaiste User bearbeitet: $db" -Detail "Anzahl: $cnt"
+                    -Message "Orphaned users processed: $db" -Detail "Count: $cnt"
             }
             catch {
                 Write-MigrationLog -Level 'WARN' -Category 'ORPHAN' `
-                    -Message "Reparatur verwaister User fehlgeschlagen: $db" -Detail $_.Exception.Message
+                    -Message "Repairing orphaned users failed: $db" -Detail $_.Exception.Message
             }
         } else {
-            Write-MigrationLog -Level 'INFO' -Category 'ORPHAN' -Message "[WHATIF] Verwaiste User reparieren: $db"
+            Write-MigrationLog -Level 'INFO' -Category 'ORPHAN' -Message "[WHATIF] Repair orphaned users: $db"
         }
 
         # 2. DB-Owner auf sa setzen
         if ($saName) {
-            Write-MigrationLog -Level 'STEP' -Category 'OWNER' -Message "Setze DB-Owner '$saName': $db"
+            Write-MigrationLog -Level 'STEP' -Category 'OWNER' -Message "Setting DB owner '$saName': $db"
             if (-not $WhatIf) {
                 try {
                     $null = Set-DbaDbOwner -SqlInstance $TargetServer -Database $db -TargetLogin $saName -ErrorAction Stop
-                    Write-MigrationLog -Level 'SUCCESS' -Category 'OWNER' -Message "DB-Owner gesetzt ($saName): $db"
+                    Write-MigrationLog -Level 'SUCCESS' -Category 'OWNER' -Message "DB owner set ($saName): $db"
                 }
                 catch {
                     Write-MigrationLog -Level 'WARN' -Category 'OWNER' `
-                        -Message "DB-Owner konnte nicht gesetzt werden: $db" -Detail $_.Exception.Message
+                        -Message "Could not set DB owner: $db" -Detail $_.Exception.Message
                 }
             } else {
-                Write-MigrationLog -Level 'INFO' -Category 'OWNER' -Message "[WHATIF] DB-Owner '$saName' setzen: $db"
+                Write-MigrationLog -Level 'INFO' -Category 'OWNER' -Message "[WHATIF] Set DB owner '$saName': $db"
             }
         }
     }
@@ -594,7 +594,7 @@ function Remove-DeadAdLogin {
         [switch]$WhatIf
     )
 
-    Write-MigrationLog -Level 'STEP' -Category 'AD-CLEAN' -Message "Suche verwaiste AD-Logins (geloeschte Konten)"
+    Write-MigrationLog -Level 'STEP' -Category 'AD-CLEAN' -Message "Looking for orphaned AD logins (deleted accounts)"
 
     $sysadmins = @()
     try {
@@ -608,7 +608,7 @@ function Remove-DeadAdLogin {
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'AD-CLEAN' `
-            -Message "Logins konnten nicht gelesen werden" -Detail $_.Exception.Message
+            -Message "Could not read logins" -Detail $_.Exception.Message
         return
     }
 
@@ -635,28 +635,28 @@ function Remove-DeadAdLogin {
         catch {
             # Transienter Fehler (DC nicht erreichbar o.ae.) -> NICHT loeschen
             Write-MigrationLog -Level 'WARN' -Category 'AD-CLEAN' `
-                -Message "AD-Pruefung uebersprungen (unklar): $($l.Name)" -Detail $_.Exception.Message
+                -Message "AD check skipped (inconclusive): $($l.Name)" -Detail $_.Exception.Message
             continue
         }
         if (-not $missing) { continue }
 
         Write-MigrationLog -Level 'WARN' -Category 'AD-CLEAN' `
-            -Message "Verwaistes AD-Login (Konto geloescht): $($l.Name)"
+            -Message "Orphaned AD login (account deleted): $($l.Name)"
         if (-not $WhatIf) {
             try {
                 Remove-DbaLogin -SqlInstance $TargetServer -Login $l.Name -Force -ErrorAction Stop | Out-Null
                 $removed++
-                Write-MigrationLog -Level 'SUCCESS' -Category 'AD-CLEAN' -Message "Login entfernt: $($l.Name)"
+                Write-MigrationLog -Level 'SUCCESS' -Category 'AD-CLEAN' -Message "Login removed: $($l.Name)"
             }
             catch {
                 Write-MigrationLog -Level 'WARN' -Category 'AD-CLEAN' `
-                    -Message "Login konnte nicht entfernt werden: $($l.Name)" -Detail $_.Exception.Message
+                    -Message "Could not remove login: $($l.Name)" -Detail $_.Exception.Message
             }
         } else {
-            Write-MigrationLog -Level 'INFO' -Category 'AD-CLEAN' -Message "[WHATIF] Login wuerde entfernt: $($l.Name)"
+            Write-MigrationLog -Level 'INFO' -Category 'AD-CLEAN' -Message "[WHATIF] Login would be removed: $($l.Name)"
         }
     }
-    Write-MigrationLog -Level 'INFO' -Category 'AD-CLEAN' -Message "AD-Login-Bereinigung abgeschlossen" -Detail "Entfernt: $removed"
+    Write-MigrationLog -Level 'INFO' -Category 'AD-CLEAN' -Message "AD login cleanup completed" -Detail "Removed: $removed"
 }
 
 # ---------------------------------------------------------------------------
@@ -672,7 +672,7 @@ function Invoke-LoginMigration {
         [switch]$WhatIf
     )
 
-    Write-MigrationLog -Level 'STEP' -Category 'LOGIN' -Message "Starte Login-Migration"
+    Write-MigrationLog -Level 'STEP' -Category 'LOGIN' -Message "Starting login migration"
     try {
         $params = @{ Source = $SourceServer; Destination = $TargetServer; ErrorAction = 'Stop'; ExcludeSystemLogins = $true }
         if ($Logins)   { $params['Login']    = $Logins }
@@ -691,7 +691,7 @@ function Invoke-LoginMigration {
         $err = @($result | Where-Object { $_.Status -ne 'Successful' }).Count
         $byStatus = (@($result | Group-Object Status | ForEach-Object { "$($_.Name)=$($_.Count)" })) -join ', '
         Write-MigrationLog -Level 'SUCCESS' -Category 'LOGIN' `
-            -Message "Login-Migration abgeschlossen" -Detail "OK: $ok | Nicht erfolgreich: $err | Status: $byStatus"
+            -Message "Login migration completed" -Detail "OK: $ok | Not successful: $err | Status: $byStatus"
         foreach ($bad in @($result | Where-Object { $_.Status -ne 'Successful' } | Select-Object -First 5)) {
             Write-MigrationLog -Level 'WARN' -Category 'LOGIN' -Message "Login $($bad.Name): $($bad.Status)" -Detail "$($bad.Notes)"
         }
@@ -699,7 +699,7 @@ function Invoke-LoginMigration {
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'LOGIN' `
-            -Message "Login-Migration fehlgeschlagen" -Detail $_.Exception.Message
+            -Message "Login migration failed" -Detail $_.Exception.Message
         throw
     }
 }
@@ -716,7 +716,7 @@ function Invoke-LinkedServerMigration {
         [switch]$WhatIf
     )
 
-    Write-MigrationLog -Level 'STEP' -Category 'LINKED-SRV' -Message "Starte Linked-Server-Migration"
+    Write-MigrationLog -Level 'STEP' -Category 'LINKED-SRV' -Message "Starting linked server migration"
     try {
         $params = @{ Source = $SourceServer; Destination = $TargetServer; ErrorAction = 'Stop' }
         if ($LinkedServers) { $params['LinkedServer'] = $LinkedServers }
@@ -725,12 +725,12 @@ function Invoke-LinkedServerMigration {
         $result = Copy-DbaLinkedServer @params
         $ok = ($result | Where-Object { $_.Status -eq 'Successful' }).Count
         Write-MigrationLog -Level 'SUCCESS' -Category 'LINKED-SRV' `
-            -Message "Linked-Server-Migration abgeschlossen" -Detail "OK: $ok"
+            -Message "Linked server migration completed" -Detail "OK: $ok"
         return $result
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'LINKED-SRV' `
-            -Message "Linked-Server-Migration fehlgeschlagen" -Detail $_.Exception.Message
+            -Message "Linked server migration failed" -Detail $_.Exception.Message
         throw
     }
 }
@@ -747,7 +747,7 @@ function Invoke-AgentJobMigration {
         [switch]$WhatIf
     )
 
-    Write-MigrationLog -Level 'STEP' -Category 'AGENT-JOB' -Message "Starte Agent-Job-Migration"
+    Write-MigrationLog -Level 'STEP' -Category 'AGENT-JOB' -Message "Starting agent job migration"
     try {
         $params = @{ Source = $SourceServer; Destination = $TargetServer; ErrorAction = 'Stop' }
         if ($Jobs)   { $params['Job']    = $Jobs }
@@ -756,12 +756,12 @@ function Invoke-AgentJobMigration {
         $result = Copy-DbaAgentJob @params
         $ok = ($result | Where-Object { $_.Status -eq 'Successful' }).Count
         Write-MigrationLog -Level 'SUCCESS' -Category 'AGENT-JOB' `
-            -Message "Agent-Job-Migration abgeschlossen" -Detail "OK: $ok"
+            -Message "Agent job migration completed" -Detail "OK: $ok"
         return $result
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'AGENT-JOB' `
-            -Message "Agent-Job-Migration fehlgeschlagen" -Detail $_.Exception.Message
+            -Message "Agent job migration failed" -Detail $_.Exception.Message
         throw
     }
 }
@@ -777,17 +777,17 @@ function Invoke-CredentialMigration {
         [switch]$WhatIf
     )
 
-    Write-MigrationLog -Level 'STEP' -Category 'CREDENTIAL' -Message "Starte Credential-Migration"
+    Write-MigrationLog -Level 'STEP' -Category 'CREDENTIAL' -Message "Starting credential migration"
     try {
         $params = @{ Source = $SourceServer; Destination = $TargetServer; ErrorAction = 'Stop' }
         if ($WhatIf) { $params['WhatIf'] = $true }
         $result = Copy-DbaCredential @params
-        Write-MigrationLog -Level 'SUCCESS' -Category 'CREDENTIAL' -Message "Credential-Migration abgeschlossen"
+        Write-MigrationLog -Level 'SUCCESS' -Category 'CREDENTIAL' -Message "Credential migration completed"
         return $result
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'CREDENTIAL' `
-            -Message "Credential-Migration fehlgeschlagen" -Detail $_.Exception.Message
+            -Message "Credential migration failed" -Detail $_.Exception.Message
         throw
     }
 }
@@ -803,17 +803,17 @@ function Invoke-ProxyMigration {
         [switch]$WhatIf
     )
 
-    Write-MigrationLog -Level 'STEP' -Category 'PROXY' -Message "Starte Proxy-Migration"
+    Write-MigrationLog -Level 'STEP' -Category 'PROXY' -Message "Starting proxy migration"
     try {
         $params = @{ Source = $SourceServer; Destination = $TargetServer; ErrorAction = 'Stop' }
         if ($WhatIf) { $params['WhatIf'] = $true }
         $result = Copy-DbaAgentProxy @params
-        Write-MigrationLog -Level 'SUCCESS' -Category 'PROXY' -Message "Proxy-Migration abgeschlossen"
+        Write-MigrationLog -Level 'SUCCESS' -Category 'PROXY' -Message "Proxy migration completed"
         return $result
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'PROXY' `
-            -Message "Proxy-Migration fehlgeschlagen" -Detail $_.Exception.Message
+            -Message "Proxy migration failed" -Detail $_.Exception.Message
         throw
     }
 }
@@ -834,12 +834,12 @@ function Test-SourceHasSqlLogins {
                Where-Object { $_.LoginType -eq 'SqlLogin' -and -not $_.IsSystemObject }
         if ($Logins) { $sql = $sql | Where-Object { $_.Name -in $Logins } }
         $cnt = @($sql).Count
-        Write-MigrationLog -Level 'INFO' -Category 'LOGIN-CHECK' -Message "SQL-Logins auf Quelle gefunden: $cnt"
+        Write-MigrationLog -Level 'INFO' -Category 'LOGIN-CHECK' -Message "SQL logins found on source: $cnt"
         return ($cnt -gt 0)
     }
     catch {
         Write-MigrationLog -Level 'WARN' -Category 'LOGIN-CHECK' `
-            -Message "SQL-Login-Pruefung fehlgeschlagen" -Detail $_.Exception.Message
+            -Message "SQL login check failed" -Detail $_.Exception.Message
         return $false
     }
 }
@@ -857,24 +857,24 @@ function Enable-MixedModeIfNeeded {
 
     if (-not $SqlLoginsPresent) {
         Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' `
-            -Message "Keine SQL-Logins zu transferieren - Auth-Modus bleibt unveraendert"
+            -Message "No SQL logins to transfer - auth mode unchanged"
         return $TargetServer
     }
 
     try {
         $mode = $TargetServer.Settings.LoginMode.ToString()
-        Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' -Message "Aktueller Ziel-Auth-Modus: $mode"
+        Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' -Message "Current target auth mode: $mode"
 
         # 'Integrated' = nur Windows-Authentifizierung
         if ($mode -ne 'Integrated') {
             Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' `
-                -Message "Mixed Mode bereits aktiv - kein Umschalten noetig"
+                -Message "Mixed mode already active - no switch needed"
             return $TargetServer
         }
 
         if ($WhatIf) {
             Write-MigrationLog -Level 'INFO' -Category 'AUTHMODE' `
-                -Message "[WHATIF] Wuerde auf Mixed Mode umstellen und SQL-Dienst neu starten"
+                -Message "[WHATIF] Would switch to mixed mode and restart the SQL service"
             return $TargetServer
         }
 
@@ -882,25 +882,25 @@ function Enable-MixedModeIfNeeded {
         $TargetServer.Settings.LoginMode = [Microsoft.SqlServer.Management.Smo.ServerLoginMode]::Mixed
         $TargetServer.Alter()
         Write-MigrationLog -Level 'SUCCESS' -Category 'AUTHMODE' `
-            -Message "Auth-Modus auf Mixed gesetzt - Neustart erforderlich"
+            -Message "Auth mode set to mixed - restart required"
 
         # 2. SQL-Dienst neu starten (damit Mixed Mode aktiv wird)
         $full = $TargetServer.Name
         $comp = ($full -split '\\')[0]
         $inst = if ($full -match '\\') { ($full -split '\\')[1] } else { 'MSSQLSERVER' }
-        Write-MigrationLog -Level 'STEP' -Category 'AUTHMODE' -Message "Starte SQL-Dienst neu" -Detail "$comp / $inst"
+        Write-MigrationLog -Level 'STEP' -Category 'AUTHMODE' -Message "Restarting SQL service" -Detail "$comp / $inst"
         $null = Restart-DbaService -ComputerName $comp -InstanceName $inst -Type Engine -Force -ErrorAction Stop
-        Write-MigrationLog -Level 'SUCCESS' -Category 'AUTHMODE' -Message "SQL-Dienst neu gestartet"
+        Write-MigrationLog -Level 'SUCCESS' -Category 'AUTHMODE' -Message "SQL service restarted"
         Start-Sleep -Seconds 5
 
         # 3. Verbindung neu aufbauen (alte ist durch den Neustart ungueltig)
         $new = Connect-DbaInstance -SqlInstance $full -TrustServerCertificate -ErrorAction Stop
-        Write-MigrationLog -Level 'SUCCESS' -Category 'AUTHMODE' -Message "Verbindung nach Neustart wiederhergestellt"
+        Write-MigrationLog -Level 'SUCCESS' -Category 'AUTHMODE' -Message "Connection restored after restart"
         return $new
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'AUTHMODE' `
-            -Message "Mixed-Mode-Umstellung fehlgeschlagen" -Detail $_.Exception.Message
+            -Message "Switch to mixed mode failed" -Detail $_.Exception.Message
         return $TargetServer
     }
 }
@@ -915,20 +915,20 @@ function Set-NamedPbmPolicyState {
         [Parameter(Mandatory)][bool]$Enabled,
         [switch]$WhatIf
     )
-    $verb = if ($Enabled) { 'aktiviert' } else { 'deaktiviert' }
+    $verb = if ($Enabled) { 'enabled' } else { 'disabled' }
     try {
         $pol = Get-DbaPbmPolicy -SqlInstance $TargetServer -ErrorAction Stop |
                Where-Object { $_.Name -eq $PolicyName } | Select-Object -First 1
         if (-not $pol) {
-            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' nicht vorhanden - nichts zu tun"
+            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' does not exist - nothing to do"
             return
         }
         if ($pol.Enabled -eq $Enabled) {
-            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' bereits $verb"
+            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' already $verb"
             return
         }
         if ($WhatIf) {
-            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "[WHATIF] Policy '$PolicyName' wuerde $verb"
+            Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "[WHATIF] Policy '$PolicyName' would be $verb"
             return
         }
         $pol.Enabled = $Enabled
@@ -937,7 +937,7 @@ function Set-NamedPbmPolicyState {
     }
     catch {
         Write-MigrationLog -Level 'WARN' -Category 'PBM' `
-            -Message "Policy '$PolicyName' konnte nicht $verb werden" -Detail $_.Exception.Message
+            -Message "Policy '$PolicyName' could not be $verb" -Detail $_.Exception.Message
     }
 }
 
@@ -959,9 +959,9 @@ function Export-MigrationLogins {
         [switch]$WhatIf
     )
     $scriptFile = Join-Path $ExchangePath 'migration_logins.sql'
-    Write-MigrationLog -Level 'STEP' -Category 'LOGIN-EXPORT' -Message "Exportiere Logins als Skript" -Detail $scriptFile
+    Write-MigrationLog -Level 'STEP' -Category 'LOGIN-EXPORT' -Message "Exporting logins as script" -Detail $scriptFile
     if ($WhatIf) {
-        Write-MigrationLog -Level 'INFO' -Category 'LOGIN-EXPORT' -Message "[WHATIF] Login-Skript wuerde erzeugt: $scriptFile"
+        Write-MigrationLog -Level 'INFO' -Category 'LOGIN-EXPORT' -Message "[WHATIF] Login script would be created: $scriptFile"
         return $scriptFile
     }
     try {
@@ -981,11 +981,11 @@ function Export-MigrationLogins {
             if ($sysNames) { $p['ExcludeLogin'] = $sysNames }
         }
         $null = Export-DbaLogin @p
-        Write-MigrationLog -Level 'SUCCESS' -Category 'LOGIN-EXPORT' -Message "Login-Skript erzeugt" -Detail $scriptFile
+        Write-MigrationLog -Level 'SUCCESS' -Category 'LOGIN-EXPORT' -Message "Login script created" -Detail $scriptFile
         return $scriptFile
     }
     catch {
-        Write-MigrationLog -Level 'ERROR' -Category 'LOGIN-EXPORT' -Message "Login-Export fehlgeschlagen" -Detail $_.Exception.Message
+        Write-MigrationLog -Level 'ERROR' -Category 'LOGIN-EXPORT' -Message "Login export failed" -Detail $_.Exception.Message
         return $null
     }
 }
@@ -999,21 +999,21 @@ function Import-MigrationLogins {
         [Parameter(Mandatory)][string]$ScriptFile,
         [switch]$WhatIf
     )
-    Write-MigrationLog -Level 'STEP' -Category 'LOGIN-IMPORT' -Message "Importiere Logins aus Skript" -Detail $ScriptFile
+    Write-MigrationLog -Level 'STEP' -Category 'LOGIN-IMPORT' -Message "Importing logins from script" -Detail $ScriptFile
     if (-not (Test-Path $ScriptFile)) {
-        Write-MigrationLog -Level 'ERROR' -Category 'LOGIN-IMPORT' -Message "Login-Skript nicht gefunden" -Detail $ScriptFile
+        Write-MigrationLog -Level 'ERROR' -Category 'LOGIN-IMPORT' -Message "Login script not found" -Detail $ScriptFile
         return
     }
     $sqlText = Get-Content -Path $ScriptFile -Raw -ErrorAction SilentlyContinue
     if ([string]::IsNullOrWhiteSpace($sqlText)) {
-        Write-MigrationLog -Level 'WARN' -Category 'LOGIN-IMPORT' -Message "Login-Skript ist leer - nichts zu importieren"
+        Write-MigrationLog -Level 'WARN' -Category 'LOGIN-IMPORT' -Message "Login script is empty - nothing to import"
         return
     }
     $batches = [regex]::Split($sqlText, '(?im)^\s*GO\s*$') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     $ok = 0; $fail = 0
     foreach ($batch in $batches) {
         if ($WhatIf) {
-            Write-MigrationLog -Level 'INFO' -Category 'LOGIN-IMPORT' -Message "[WHATIF] Batch wuerde ausgefuehrt" -Detail ($batch.Trim() -split "`n")[0]
+            Write-MigrationLog -Level 'INFO' -Category 'LOGIN-IMPORT' -Message "[WHATIF] Batch would be executed" -Detail ($batch.Trim() -split "`n")[0]
             continue
         }
         try {
@@ -1023,11 +1023,11 @@ function Import-MigrationLogins {
         catch {
             $fail++
             Write-MigrationLog -Level 'WARN' -Category 'LOGIN-IMPORT' `
-                -Message "Batch fehlgeschlagen (uebersprungen)" -Detail $_.Exception.Message
+                -Message "Batch failed (skipped)" -Detail $_.Exception.Message
         }
     }
     Write-MigrationLog -Level 'SUCCESS' -Category 'LOGIN-IMPORT' `
-        -Message "Login-Import abgeschlossen" -Detail "OK: $ok | Fehler/uebersprungen: $fail"
+        -Message "Login import completed" -Detail "OK: $ok | Failed/skipped: $fail"
 }
 
 # ---------------------------------------------------------------------------
@@ -1043,20 +1043,20 @@ function Import-MigrationScriptFile {
         [switch]$WhatIf
     )
     if ([string]::IsNullOrWhiteSpace($ScriptFile) -or -not (Test-Path $ScriptFile)) {
-        Write-MigrationLog -Level 'WARN' -Category $Category -Message "Skript nicht gefunden - uebersprungen" -Detail $ScriptFile
+        Write-MigrationLog -Level 'WARN' -Category $Category -Message "Script not found - skipped" -Detail $ScriptFile
         return
     }
-    Write-MigrationLog -Level 'STEP' -Category $Category -Message "Importiere Skript" -Detail $ScriptFile
+    Write-MigrationLog -Level 'STEP' -Category $Category -Message "Importing script" -Detail $ScriptFile
     $sqlText = Get-Content -Path $ScriptFile -Raw -ErrorAction SilentlyContinue
     if ([string]::IsNullOrWhiteSpace($sqlText)) {
-        Write-MigrationLog -Level 'INFO' -Category $Category -Message "Skript ist leer - nichts zu importieren"
+        Write-MigrationLog -Level 'INFO' -Category $Category -Message "Script is empty - nothing to import"
         return
     }
     $batches = [regex]::Split($sqlText, '(?im)^\s*GO\s*$') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     $ok = 0; $fail = 0
     foreach ($batch in $batches) {
         if ($WhatIf) {
-            Write-MigrationLog -Level 'INFO' -Category $Category -Message "[WHATIF] Batch wuerde ausgefuehrt" -Detail (($batch.Trim() -split "`n")[0])
+            Write-MigrationLog -Level 'INFO' -Category $Category -Message "[WHATIF] Batch would be executed" -Detail (($batch.Trim() -split "`n")[0])
             continue
         }
         try {
@@ -1065,10 +1065,10 @@ function Import-MigrationScriptFile {
         }
         catch {
             $fail++
-            Write-MigrationLog -Level 'WARN' -Category $Category -Message "Batch fehlgeschlagen (uebersprungen)" -Detail $_.Exception.Message
+            Write-MigrationLog -Level 'WARN' -Category $Category -Message "Batch failed (skipped)" -Detail $_.Exception.Message
         }
     }
-    Write-MigrationLog -Level 'SUCCESS' -Category $Category -Message "Skript-Import abgeschlossen" -Detail "OK: $ok | Fehler/uebersprungen: $fail"
+    Write-MigrationLog -Level 'SUCCESS' -Category $Category -Message "Script import completed" -Detail "OK: $ok | Failed/skipped: $fail"
 }
 
 # ---------------------------------------------------------------------------
@@ -1080,10 +1080,10 @@ function Write-SecretsTodo {
     try {
         $f = Join-Path $ExchangePath 'migration_secrets_TODO.txt'
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        $lines = $Names | ForEach-Object { "$stamp  [$ObjectType] $_  -> Passwort/Secret am Ziel pruefen/nachtragen" }
+        $lines = $Names | ForEach-Object { "$stamp  [$ObjectType] $_  -> check/add password/secret on target" }
         $lines | Out-File -FilePath $f -Append -Encoding UTF8
         Write-MigrationLog -Level 'WARN' -Category 'SECRETS' `
-            -Message "$ObjectType : Geheimnisse ggf. manuell nachtragen ($($Names.Count)) - siehe migration_secrets_TODO.txt"
+            -Message "$ObjectType : secrets may need to be added manually ($($Names.Count)) - see migration_secrets_TODO.txt"
     } catch { }
 }
 
@@ -1094,16 +1094,16 @@ function Export-MigrationAgentJobs {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$SourceServer,[Parameter(Mandatory)][string]$ExchangePath,[switch]$WhatIf)
     $f = Join-Path $ExchangePath 'migration_jobs.sql'
-    Write-MigrationLog -Level 'STEP' -Category 'JOB-EXPORT' -Message "Exportiere Agent Jobs als Skript" -Detail $f
-    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'JOB-EXPORT' -Message "[WHATIF] Job-Skript wuerde erzeugt"; return $f }
+    Write-MigrationLog -Level 'STEP' -Category 'JOB-EXPORT' -Message "Exporting agent jobs as script" -Detail $f
+    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'JOB-EXPORT' -Message "[WHATIF] Job script would be created"; return $f }
     try {
         $jobs = Get-DbaAgentJob -SqlInstance $SourceServer -ErrorAction Stop
-        if (-not $jobs) { Write-MigrationLog -Level 'INFO' -Category 'JOB-EXPORT' -Message "Keine Agent Jobs vorhanden"; return $null }
+        if (-not $jobs) { Write-MigrationLog -Level 'INFO' -Category 'JOB-EXPORT' -Message "No agent jobs present"; return $null }
         $null = $jobs | Export-DbaScript -FilePath $f -ErrorAction Stop
-        Write-MigrationLog -Level 'SUCCESS' -Category 'JOB-EXPORT' -Message "Job-Skript erzeugt ($(@($jobs).Count))" -Detail $f
+        Write-MigrationLog -Level 'SUCCESS' -Category 'JOB-EXPORT' -Message "Job script created ($(@($jobs).Count))" -Detail $f
         return $f
     } catch {
-        Write-MigrationLog -Level 'ERROR' -Category 'JOB-EXPORT' -Message "Job-Export fehlgeschlagen" -Detail $_.Exception.Message
+        Write-MigrationLog -Level 'ERROR' -Category 'JOB-EXPORT' -Message "Job export failed" -Detail $_.Exception.Message
         return $null
     }
 }
@@ -1112,16 +1112,16 @@ function Export-MigrationProxies {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$SourceServer,[Parameter(Mandatory)][string]$ExchangePath,[switch]$WhatIf)
     $f = Join-Path $ExchangePath 'migration_proxies.sql'
-    Write-MigrationLog -Level 'STEP' -Category 'PROXY-EXPORT' -Message "Exportiere Proxies als Skript" -Detail $f
-    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'PROXY-EXPORT' -Message "[WHATIF] Proxy-Skript wuerde erzeugt"; return $f }
+    Write-MigrationLog -Level 'STEP' -Category 'PROXY-EXPORT' -Message "Exporting proxies as script" -Detail $f
+    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'PROXY-EXPORT' -Message "[WHATIF] Proxy script would be created"; return $f }
     try {
         $prox = Get-DbaAgentProxy -SqlInstance $SourceServer -ErrorAction Stop
-        if (-not $prox) { Write-MigrationLog -Level 'INFO' -Category 'PROXY-EXPORT' -Message "Keine Proxies vorhanden"; return $null }
+        if (-not $prox) { Write-MigrationLog -Level 'INFO' -Category 'PROXY-EXPORT' -Message "No proxies present"; return $null }
         $null = $prox | Export-DbaScript -FilePath $f -ErrorAction Stop
-        Write-MigrationLog -Level 'SUCCESS' -Category 'PROXY-EXPORT' -Message "Proxy-Skript erzeugt ($(@($prox).Count))" -Detail $f
+        Write-MigrationLog -Level 'SUCCESS' -Category 'PROXY-EXPORT' -Message "Proxy script created ($(@($prox).Count))" -Detail $f
         return $f
     } catch {
-        Write-MigrationLog -Level 'ERROR' -Category 'PROXY-EXPORT' -Message "Proxy-Export fehlgeschlagen" -Detail $_.Exception.Message
+        Write-MigrationLog -Level 'ERROR' -Category 'PROXY-EXPORT' -Message "Proxy export failed" -Detail $_.Exception.Message
         return $null
     }
 }
@@ -1130,18 +1130,18 @@ function Export-MigrationLinkedServers {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$SourceServer,[Parameter(Mandatory)][string]$ExchangePath,[switch]$WhatIf)
     $f = Join-Path $ExchangePath 'migration_linkedservers.sql'
-    Write-MigrationLog -Level 'STEP' -Category 'LS-EXPORT' -Message "Exportiere Linked Server als Skript" -Detail $f
-    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'LS-EXPORT' -Message "[WHATIF] Linked-Server-Skript wuerde erzeugt"; return $f }
+    Write-MigrationLog -Level 'STEP' -Category 'LS-EXPORT' -Message "Exporting linked servers as script" -Detail $f
+    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'LS-EXPORT' -Message "[WHATIF] Linked server script would be created"; return $f }
     try {
         $ls = Get-DbaLinkedServer -SqlInstance $SourceServer -ErrorAction Stop
-        if (-not $ls) { Write-MigrationLog -Level 'INFO' -Category 'LS-EXPORT' -Message "Keine Linked Server vorhanden"; return $null }
+        if (-not $ls) { Write-MigrationLog -Level 'INFO' -Category 'LS-EXPORT' -Message "No linked servers present"; return $null }
         $null = Export-DbaLinkedServer -SqlInstance $SourceServer -FilePath $f -ErrorAction Stop
         # Linked-Server-Passwoerter lassen sich nicht immer entschluesseln -> Report
         Write-SecretsTodo -ExchangePath $ExchangePath -ObjectType 'LinkedServer' -Names (@($ls | Select-Object -ExpandProperty Name))
-        Write-MigrationLog -Level 'SUCCESS' -Category 'LS-EXPORT' -Message "Linked-Server-Skript erzeugt ($(@($ls).Count))" -Detail $f
+        Write-MigrationLog -Level 'SUCCESS' -Category 'LS-EXPORT' -Message "Linked server script created ($(@($ls).Count))" -Detail $f
         return $f
     } catch {
-        Write-MigrationLog -Level 'ERROR' -Category 'LS-EXPORT' -Message "Linked-Server-Export fehlgeschlagen" -Detail $_.Exception.Message
+        Write-MigrationLog -Level 'ERROR' -Category 'LS-EXPORT' -Message "Linked server export failed" -Detail $_.Exception.Message
         return $null
     }
 }
@@ -1150,18 +1150,18 @@ function Export-MigrationCredentials {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$SourceServer,[Parameter(Mandatory)][string]$ExchangePath,[switch]$WhatIf)
     $f = Join-Path $ExchangePath 'migration_credentials.sql'
-    Write-MigrationLog -Level 'STEP' -Category 'CRED-EXPORT' -Message "Exportiere Credentials als Skript" -Detail $f
-    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'CRED-EXPORT' -Message "[WHATIF] Credential-Skript wuerde erzeugt"; return $f }
+    Write-MigrationLog -Level 'STEP' -Category 'CRED-EXPORT' -Message "Exporting credentials as script" -Detail $f
+    if ($WhatIf) { Write-MigrationLog -Level 'INFO' -Category 'CRED-EXPORT' -Message "[WHATIF] Credential script would be created"; return $f }
     try {
         $cr = Get-DbaCredential -SqlInstance $SourceServer -ErrorAction Stop
-        if (-not $cr) { Write-MigrationLog -Level 'INFO' -Category 'CRED-EXPORT' -Message "Keine Credentials vorhanden"; return $null }
+        if (-not $cr) { Write-MigrationLog -Level 'INFO' -Category 'CRED-EXPORT' -Message "No credentials present"; return $null }
         $null = Export-DbaCredential -SqlInstance $SourceServer -FilePath $f -ErrorAction Stop
         # Credential-Secrets sind nicht immer entschluesselbar -> Report
         Write-SecretsTodo -ExchangePath $ExchangePath -ObjectType 'Credential' -Names (@($cr | Select-Object -ExpandProperty Name))
-        Write-MigrationLog -Level 'SUCCESS' -Category 'CRED-EXPORT' -Message "Credential-Skript erzeugt ($(@($cr).Count))" -Detail $f
+        Write-MigrationLog -Level 'SUCCESS' -Category 'CRED-EXPORT' -Message "Credential script created ($(@($cr).Count))" -Detail $f
         return $f
     } catch {
-        Write-MigrationLog -Level 'ERROR' -Category 'CRED-EXPORT' -Message "Credential-Export fehlgeschlagen" -Detail $_.Exception.Message
+        Write-MigrationLog -Level 'ERROR' -Category 'CRED-EXPORT' -Message "Credential export failed" -Detail $_.Exception.Message
         return $null
     }
 }
@@ -1200,7 +1200,7 @@ function Invoke-DirectDatabaseTransfer {
                 $tgtLogU  = ConvertTo-AdminShareUnc -ComputerName $tgtHost -LocalPath $tgtLogL
 
                 if ($WhatIf) {
-                    Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "[WHATIF] Detach/Attach direkt: $dbName"
+                    Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "[WHATIF] Detach/attach direct: $dbName"
                     continue
                 }
                 Detach-DbaDatabase -SqlInstance $SourceServer -Database $dbName -Force -ErrorAction Stop | Out-Null
@@ -1215,7 +1215,7 @@ function Invoke-DirectDatabaseTransfer {
                 }
                 $attach = Build-AttachQuery -DbName $dbName -Files $tgtLocalFiles.ToArray()
                 Invoke-DbaQuery -SqlInstance $TargetServer -Query $attach -ErrorAction Stop
-                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Attach (direkt) OK: $dbName"
+                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Attach (direct) OK: $dbName"
             }
             else {
                 # --- Backup/Restore direkt ---
@@ -1224,7 +1224,7 @@ function Invoke-DirectDatabaseTransfer {
                 $tgtUnc   = ConvertTo-AdminShareUnc -ComputerName $tgtHost -LocalPath $tgtLocal
 
                 if ($WhatIf) {
-                    Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "[WHATIF] Backup/Restore direkt: $dbName ($srcDir -> $tgtUnc)"
+                    Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "[WHATIF] Backup/restore direct: $dbName ($srcDir -> $tgtUnc)"
                     continue
                 }
                 $srcDirAccess = Resolve-ServerPathForAccess -ServerInstance $SourceServer.Name -Path $srcDir
@@ -1233,44 +1233,44 @@ function Invoke-DirectDatabaseTransfer {
                 if (-not (Test-Path $tgtUnc)) { New-Item -ItemType Directory -Path $tgtUnc -Force -ErrorAction Stop | Out-Null }
                 $probe = Join-Path $tgtUnc ('_sqlmig_write_test_{0}.tmp' -f [guid]::NewGuid().ToString('N'))
                 try { Set-Content -Path $probe -Value 'x' -ErrorAction Stop; Remove-Item $probe -Force -ErrorAction SilentlyContinue }
-                catch { throw "Ziel '$tgtUnc' nicht beschreibbar fuer den Benutzer des Tools: $($_.Exception.Message)" }
+                catch { throw "Target '$tgtUnc' is not writable for the tool user: $($_.Exception.Message)" }
                 $dbInfo   = Get-DbaDatabase -SqlInstance $SourceServer -Database $dbName -ErrorAction Stop
                 $usedBytes = [math]::Max(0, ([double]$dbInfo.Size * 1MB) - ([double]$dbInfo.SpaceAvailable * 1KB))
                 $freeBytes = Get-PathFreeBytes -Path $tgtUnc
                 $usedGb = [math]::Round($usedBytes / 1GB, 1)
                 $freeGb = if ($null -ne $freeBytes) { [math]::Round($freeBytes / 1GB, 1) } else { '?' }
-                Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "Preflight Ziel: frei $freeGb GB, DB belegt ca. $usedGb GB (Komprimierung: $($WithCompression.IsPresent))" -Detail $tgtUnc
+                Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "Preflight target: free $freeGb GB, DB uses approx. $usedGb GB (compression: $($WithCompression.IsPresent))" -Detail $tgtUnc
                 if ($null -ne $freeBytes -and $freeBytes -lt $usedBytes) {
                     if ($WithCompression) {
-                        Write-MigrationLog -Level 'WARN' -Category 'DIRECT-DB' -Message "Wenig Platz am Ziel, Backup ist komprimiert - es kann trotzdem reichen"
+                        Write-MigrationLog -Level 'WARN' -Category 'DIRECT-DB' -Message "Little space on target, backup is compressed - it may still fit"
                     } else {
-                        throw "Zu wenig Platz am Ziel '$tgtUnc': frei $freeGb GB, benoetigt ca. $usedGb GB (unkomprimiert). Backup wird nicht gestartet."
+                        throw "Not enough space on target '$tgtUnc': free $freeGb GB, needs approx. $usedGb GB (uncompressed). Backup will not be started."
                     }
                 }
                 Ensure-LocalBackupPath -Path $srcDirAccess
-                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Backup auf Quelle startet: $dbName" -Detail $srcDir
+                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Backup on source starting: $dbName" -Detail $srcDir
                 $bp = Backup-DbaDatabase -SqlInstance $SourceServer -Database $dbName `
                     -BackupDirectory $srcDir -CompressBackup:$WithCompression.IsPresent -CopyOnly:$CopyOnly.IsPresent -ErrorAction Stop
                 $srcFile = $bp.BackupPath
-                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Backup (Quelle, lokal) OK: $dbName" -Detail $srcFile
+                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Backup (source, local) OK: $dbName" -Detail $srcFile
 
                 # robocopy Quelle-lokal -> Ziel-Admin-Freigabe
                 $srcFileAccess = Resolve-ServerPathForAccess -ServerInstance $SourceServer.Name -Path $srcFile
                 $sizeGb = try { [math]::Round((Get-Item -LiteralPath $srcFileAccess -ErrorAction Stop).Length / 1GB, 2) } catch { '?' }
-                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Kopiere Backup zum Ziel ($sizeGb GB, kann dauern): $dbName" -Detail "$srcFileAccess -> $tgtUnc"
+                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Copying backup to target ($sizeGb GB, may take a while): $dbName" -Detail "$srcFileAccess -> $tgtUnc"
                 $null = Copy-FileRobocopy -SourceFile $srcFileAccess -DestDir $tgtUnc
                 $tgtLocalFile = Join-Path $tgtLocal (Split-Path $srcFile -Leaf)
-                Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "Backup ans Ziel kopiert" -Detail $tgtLocalFile
+                Write-MigrationLog -Level 'INFO' -Category 'DIRECT-DB' -Message "Backup copied to target" -Detail $tgtLocalFile
 
                 # Restore am Ziel aus dessen LOKALEM Pfad
-                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Restore auf Ziel startet: $dbName" -Detail $tgtLocalFile
+                Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Restore on target starting: $dbName" -Detail $tgtLocalFile
                 $null = Restore-DbaDatabase -SqlInstance $TargetServer -Path $tgtLocalFile `
                     -DatabaseName $dbName -WithReplace -ErrorAction Stop
-                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Restore (Ziel) OK: $dbName"
+                Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Restore (target) OK: $dbName"
             }
         }
         catch {
-            Write-MigrationLog -Level 'ERROR' -Category 'DIRECT-DB' -Message "Fehler bei $dbName (direkt)" -Detail $_.Exception.Message
+            Write-MigrationLog -Level 'ERROR' -Category 'DIRECT-DB' -Message "Error for $dbName (direct)" -Detail $_.Exception.Message
         }
     }
 }
@@ -1323,21 +1323,21 @@ function Invoke-MigrationFinalize {
         $src = Get-SqmSqlToolSource
         if ($src) {
             try { Import-Module $src.Path -DisableNameChecking -ErrorAction Stop }
-            catch { Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' -Message "sqmSQLTool konnte nicht geladen werden" -Detail $_.Exception.Message }
+            catch { Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' -Message "Could not load sqmSQLTool" -Detail $_.Exception.Message }
         }
     }
 
     if (-not (Get-Command Invoke-sqmDatabaseStandardization -ErrorAction SilentlyContinue)) {
         Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' `
-            -Message "sqmSQLTool nicht verfuegbar - Fallback auf einfache Bereinigung (Orphans + Owner)"
+            -Message "sqmSQLTool not available - falling back to simple cleanup (orphans + owner)"
         Invoke-PostRestoreCleanup -TargetServer $TargetServer -Databases $Databases -WhatIf:$WhatIf
         Write-MigrationLog -Level 'WARN' -Category 'FINALIZE' `
-            -Message "Always-On-Aufnahme uebersprungen (Add-sqmDatabaseToAG nicht verfuegbar) - bitte manuell pruefen"
+            -Message "Always On join skipped (Add-sqmDatabaseToAG not available) - please check manually"
         return
     }
 
     # 1. Standardisierung
-    Write-MigrationLog -Level 'STEP' -Category 'STANDARD' -Message "Datenbank-Standardisierung: $($Databases -join ', ')"
+    Write-MigrationLog -Level 'STEP' -Category 'STANDARD' -Message "Database standardization: $($Databases -join ', ')"
     try {
         $rows = @(Invoke-sqmDatabaseStandardization -SqlInstance $instance @credParam -Database $Databases `
                     -WhatIf:$WhatIf -Confirm:$false -EnableException)
@@ -1349,10 +1349,10 @@ function Invoke-MigrationFinalize {
         $failed = @($rows | Where-Object Status -eq 'Failed').Count
         $lvl = if ($failed) { 'WARN' } else { 'SUCCESS' }
         Write-MigrationLog -Level $lvl -Category 'STANDARD' `
-            -Message "Standardisierung beendet ($($rows.Count) Aktionen, $failed fehlgeschlagen)"
+            -Message "Standardization finished ($($rows.Count) actions, $failed failed)"
     }
     catch {
-        Write-MigrationLog -Level 'WARN' -Category 'STANDARD' -Message "Standardisierung fehlgeschlagen" -Detail $_.Exception.Message
+        Write-MigrationLog -Level 'WARN' -Category 'STANDARD' -Message "Standardization failed" -Detail $_.Exception.Message
     }
 
     # 2. Always On: ist das Ziel Primary einer AG?
@@ -1370,23 +1370,23 @@ WHERE gs.primary_replica = @@SERVERNAME
         }
     }
     catch {
-        Write-MigrationLog -Level 'WARN' -Category 'AG' -Message "Always-On-Status des Ziels nicht ermittelbar" -Detail $_.Exception.Message
+        Write-MigrationLog -Level 'WARN' -Category 'AG' -Message "Could not determine the Always On status of the target" -Detail $_.Exception.Message
         return
     }
 
     if ($ags.Count -eq 0) {
-        Write-MigrationLog -Level 'INFO' -Category 'AG' -Message "Ziel ist nicht Primary einer Availability Group - keine AG-Aufnahme"
+        Write-MigrationLog -Level 'INFO' -Category 'AG' -Message "Target is not the primary of an availability group - no AG join"
         return
     }
     if ($ags.Count -gt 1) {
         Write-MigrationLog -Level 'WARN' -Category 'AG' `
-            -Message "Ziel ist Primary mehrerer AGs ($($ags -join ', ')) - automatische Auswahl nicht moeglich" `
-            -Detail "Bitte Add-sqmDatabaseToAG -AvailabilityGroup <Name> -Database ... manuell ausfuehren."
+            -Message "Target is primary of several AGs ($($ags -join ', ')) - automatic selection not possible" `
+            -Detail "Please run Add-sqmDatabaseToAG -AvailabilityGroup <Name> -Database ... manually."
         return
     }
 
     $ag = $ags[0]
-    Write-MigrationLog -Level 'STEP' -Category 'AG' -Message "Nehme Datenbanken in AG '$ag' auf: $($Databases -join ', ')"
+    Write-MigrationLog -Level 'STEP' -Category 'AG' -Message "Adding databases to AG '$ag': $($Databases -join ', ')"
     try {
         $res = @(Add-sqmDatabaseToAG -SqlInstance $instance @credParam -AvailabilityGroup $ag -Database $Databases `
                     -WhatIf:$WhatIf -EnableException)
@@ -1397,10 +1397,10 @@ WHERE gs.primary_replica = @@SERVERNAME
             $lvl = if ($st -match 'Fail|Error|Missing|Unsupported') { 'WARN' } else { 'INFO' }
             Write-MigrationLog -Level $lvl -Category 'AG' -Message "${db}: $st" -Detail $msg
         }
-        Write-MigrationLog -Level 'SUCCESS' -Category 'AG' -Message "AG-Aufnahme beendet ($ag)"
+        Write-MigrationLog -Level 'SUCCESS' -Category 'AG' -Message "AG join finished ($ag)"
     }
     catch {
-        Write-MigrationLog -Level 'WARN' -Category 'AG' -Message "AG-Aufnahme fehlgeschlagen ($ag)" -Detail $_.Exception.Message
+        Write-MigrationLog -Level 'WARN' -Category 'AG' -Message "AG join failed ($ag)" -Detail $_.Exception.Message
     }
 }
 
@@ -1424,7 +1424,7 @@ function Invoke-DirectMigration {
         [switch]$CopyOnly,
         [switch]$WhatIf
     )
-    Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direkt-Migration gestartet (ein Durchlauf)"
+    Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direct migration started (single run)"
 
     # 1. Datenbanken: Quelle lokal sichern/detachen, Ziel ueber Admin-Freigabe-UNC
     if ($Objects['Datenbanken'] -and $Databases.Count -gt 0) {
@@ -1438,7 +1438,7 @@ function Invoke-DirectMigration {
         $TargetServer = Enable-MixedModeIfNeeded -TargetServer $TargetServer -SqlLoginsPresent $SqlLoginsPresent -WhatIf:$WhatIf
         Set-NamedPbmPolicyState -TargetServer $TargetServer -PolicyName 'New_Password_Policy' -Enabled $false -WhatIf:$WhatIf
         try { Invoke-LoginMigration -SourceServer $SourceServer -TargetServer $TargetServer -SyncSids -WhatIf:$WhatIf }
-        catch { Write-MigrationLog -Level 'WARN' -Category 'DIRECT' -Message "Login-Migration (direkt) mit Fehlern" -Detail $_.Exception.Message }
+        catch { Write-MigrationLog -Level 'WARN' -Category 'DIRECT' -Message "Login migration (direct) completed with errors" -Detail $_.Exception.Message }
         Set-NamedPbmPolicyState -TargetServer $TargetServer -PolicyName 'New_Password_Policy' -Enabled $true -WhatIf:$WhatIf
         Remove-DeadAdLogin -TargetServer $TargetServer -WhatIf:$WhatIf
     }
@@ -1452,7 +1452,7 @@ function Invoke-DirectMigration {
         )) {
         if ($Objects[$pair.Key]) {
             try { & $pair.Fn }
-            catch { Write-MigrationLog -Level 'WARN' -Category 'DIRECT' -Message "$($pair.Key)-Migration (direkt) mit Fehlern" -Detail $_.Exception.Message }
+            catch { Write-MigrationLog -Level 'WARN' -Category 'DIRECT' -Message "$($pair.Key) migration (direct) completed with errors" -Detail $_.Exception.Message }
         }
     }
 
@@ -1461,7 +1461,7 @@ function Invoke-DirectMigration {
         Invoke-MigrationFinalize -TargetServer $TargetServer -Databases $Databases -WhatIf:$WhatIf
     }
 
-    Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT' -Message "Direkt-Migration abgeschlossen"
+    Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT' -Message "Direct migration completed"
 }
 
 Export-ModuleMember -Function Invoke-DatabaseMigrationBackupRestore,

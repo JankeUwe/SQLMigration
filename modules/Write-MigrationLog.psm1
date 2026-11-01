@@ -25,7 +25,7 @@ function Initialize-MigrationLog {
     # CSV-Header
     "Timestamp;Level;Category;Message;Detail" | Out-File -FilePath $script:CsvFile -Encoding UTF8
 
-    Write-MigrationLog -Level 'INFO' -Category 'INIT' -Message 'Logdatei initialisiert' -Detail $script:LogFile
+    Write-MigrationLog -Level 'INFO' -Category 'INIT' -Message 'Log file initialized' -Detail $script:LogFile
     return $script:LogFile
 }
 

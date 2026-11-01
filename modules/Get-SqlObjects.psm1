@@ -19,12 +19,12 @@ function Get-SqlDatabases {
                              Compatibility, Owner, CreateDate, IsAccessible,
                              @{N='SizeGB';E={[math]::Round($_.SizeMB/1024,2)}}
         Write-MigrationLog -Level 'INFO' -Category 'GET-DB' `
-            -Message "Datenbanken gelesen: $($dbs.Count)" -Detail $Server.Name
+            -Message "Databases read: $($dbs.Count)" -Detail $Server.Name
         return $dbs
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'GET-DB' `
-            -Message "Fehler beim Lesen der Datenbanken" -Detail $_.Exception.Message
+            -Message "Error reading databases" -Detail $_.Exception.Message
         return @()
     }
 }
@@ -40,12 +40,12 @@ function Get-SqlLogins {
                                 HasAccess, MustChangePassword, CreateDate,
                                 @{N='IsSystem';E={$false}}
         Write-MigrationLog -Level 'INFO' -Category 'GET-LOGIN' `
-            -Message "Logins gelesen: $($logins.Count)" -Detail $Server.Name
+            -Message "Logins read: $($logins.Count)" -Detail $Server.Name
         return $logins
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'GET-LOGIN' `
-            -Message "Fehler beim Lesen der Logins" -Detail $_.Exception.Message
+            -Message "Error reading logins" -Detail $_.Exception.Message
         return @()
     }
 }
@@ -72,11 +72,11 @@ function Get-SqlDbUsers {
             if ($users) { $result.AddRange([System.Management.Automation.PSObject[]]$users) }
         }
         Write-MigrationLog -Level 'INFO' -Category 'GET-USER' `
-            -Message "DB-User gelesen: $($result.Count)" -Detail $Server.Name
+            -Message "DB users read: $($result.Count)" -Detail $Server.Name
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'GET-USER' `
-            -Message "Fehler beim Lesen der DB-User" -Detail $_.Exception.Message
+            -Message "Error reading DB users" -Detail $_.Exception.Message
     }
     return $result
 }
@@ -89,12 +89,12 @@ function Get-SqlLinkedServers {
               Select-Object Name, ProductName, ProviderName, DataSource,
                             IsLinkedServerLocal, RemoteUser, Publisher
         Write-MigrationLog -Level 'INFO' -Category 'GET-LS' `
-            -Message "Linked Server gelesen: $($ls.Count)" -Detail $Server.Name
+            -Message "Linked servers read: $($ls.Count)" -Detail $Server.Name
         return $ls
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'GET-LS' `
-            -Message "Fehler beim Lesen der Linked Server" -Detail $_.Exception.Message
+            -Message "Error reading linked servers" -Detail $_.Exception.Message
         return @()
     }
 }
@@ -108,12 +108,12 @@ function Get-SqlAgentJobs {
                               LastRunDate, LastRunOutcome, NextRunDate,
                               HasSchedule, Description
         Write-MigrationLog -Level 'INFO' -Category 'GET-JOB' `
-            -Message "Agent Jobs gelesen: $($jobs.Count)" -Detail $Server.Name
+            -Message "Agent jobs read: $($jobs.Count)" -Detail $Server.Name
         return $jobs
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'GET-JOB' `
-            -Message "Fehler beim Lesen der Agent Jobs" -Detail $_.Exception.Message
+            -Message "Error reading agent jobs" -Detail $_.Exception.Message
         return @()
     }
 }
@@ -125,12 +125,12 @@ function Get-SqlCredentials {
         $creds = Get-DbaCredential -SqlInstance $Server -ErrorAction Stop |
                  Select-Object Name, Identity, CreateDate, ModifyDate
         Write-MigrationLog -Level 'INFO' -Category 'GET-CRED' `
-            -Message "Credentials gelesen: $($creds.Count)" -Detail $Server.Name
+            -Message "Credentials read: $($creds.Count)" -Detail $Server.Name
         return $creds
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'GET-CRED' `
-            -Message "Fehler beim Lesen der Credentials" -Detail $_.Exception.Message
+            -Message "Error reading credentials" -Detail $_.Exception.Message
         return @()
     }
 }
@@ -142,12 +142,12 @@ function Get-SqlProxies {
         $proxies = Get-DbaAgentProxy -SqlInstance $Server -ErrorAction Stop |
                    Select-Object Name, CredentialName, IsEnabled, Description
         Write-MigrationLog -Level 'INFO' -Category 'GET-PROXY' `
-            -Message "Proxies gelesen: $($proxies.Count)" -Detail $Server.Name
+            -Message "Proxies read: $($proxies.Count)" -Detail $Server.Name
         return $proxies
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'GET-PROXY' `
-            -Message "Fehler beim Lesen der Proxies" -Detail $_.Exception.Message
+            -Message "Error reading proxies" -Detail $_.Exception.Message
         return @()
     }
 }

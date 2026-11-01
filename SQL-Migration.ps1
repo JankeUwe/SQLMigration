@@ -49,15 +49,15 @@ $modulePath = Join-Path $PSScriptRoot 'modules'
     if (Test-Path $mp) {
         Import-Module $mp -Force -DisableNameChecking -ErrorAction Stop
     } else {
-        throw "Modul nicht gefunden: $mp"
+        throw "Module not found: $mp"
     }
 }
 
 # dbaTools pruefen
 if (-not (Get-Module -ListAvailable -Name dbaTools)) {
     [System.Windows.Forms.MessageBox]::Show(
-        "dbaTools ist nicht installiert.`nBitte installieren: Install-Module dbaTools",
-        'Fehlende Abhaengigkeit', 'OK', 'Error') | Out-Null
+        "dbaTools is not installed.`nPlease install: Install-Module dbaTools",
+        'Missing dependency', 'OK', 'Error') | Out-Null
     exit 1
 }
 Import-Module dbaTools -ErrorAction Stop
@@ -136,7 +136,7 @@ function Show-RoleDialog {
     $stateExists = Test-Path $stateFile
 
     $dlg              = New-Object System.Windows.Forms.Form
-    $dlg.Text         = 'SQL Migration - Rollenauswahl'
+    $dlg.Text         = 'SQL Migration - Select Role'
     $dlg.Size         = New-Object System.Drawing.Size(480, 320)
     $dlg.StartPosition= 'CenterScreen'
     $dlg.BackColor    = $clrBg
@@ -146,7 +146,7 @@ function Show-RoleDialog {
     $dlg.MaximizeBox  = $false
 
     $lbl           = New-Object System.Windows.Forms.Label
-    $lbl.Text      = 'Welche Rolle uebernimmt dieses Script auf diesem Rechner?'
+    $lbl.Text      = 'Which role does this script take on this machine?'
     $lbl.Font      = $fntBold
     $lbl.ForeColor = $clrText
     $lbl.AutoSize  = $false
@@ -160,10 +160,10 @@ function Show-RoleDialog {
     $lblState.Size     = New-Object System.Drawing.Size(440, 20)
     $lblState.Location = New-Object System.Drawing.Point(16, 58)
     if ($stateExists) {
-        $lblState.Text     = '[OK] Zustandsdatei gefunden im Exchange-Pfad - Ziel-Modus empfohlen'
+        $lblState.Text     = '[OK] State file found in exchange path - target mode recommended'
         $lblState.ForeColor= [System.Drawing.Color]::FromArgb(40,167,69)
     } else {
-        $lblState.Text     = '[ ] Keine Zustandsdatei gefunden - Quell-Modus empfohlen'
+        $lblState.Text     = '[ ] No state file found - source mode recommended'
         $lblState.ForeColor= $clrSubText
     }
     $dlg.Controls.Add($lblState)
@@ -181,7 +181,7 @@ function Show-RoleDialog {
     $btnSource.FlatStyle= 'Flat'
     $btnSource.FlatAppearance.BorderColor = $clrAccent
     $btnSource.FlatAppearance.BorderSize  = 2
-    $btnSource.Text     = ">>  QUELL-Server (Phase 1)`r`nBackup / Detach + Copy auf Exchange-Pfad. Zustandsdatei wird erstellt."
+    $btnSource.Text     = ">>  SOURCE server (phase 1)`r`nBackup / detach + copy to the exchange path. A state file is created."
     $btnSource.TextAlign= 'MiddleLeft'
     $btnSource.Padding  = New-Object System.Windows.Forms.Padding(10,0,0,0)
     $btnSource.DialogResult = [System.Windows.Forms.DialogResult]::Yes   # Yes = Source
@@ -195,7 +195,7 @@ function Show-RoleDialog {
     $btnTarget.FlatStyle= 'Flat'
     $btnTarget.FlatAppearance.BorderColor = $clrAccentGrn
     $btnTarget.FlatAppearance.BorderSize  = 2
-    $btnTarget.Text     = "<<  ZIEL-Server (Phase 2)`r`nCopy vom Exchange-Pfad + Restore / Attach. Liest Zustandsdatei."
+    $btnTarget.Text     = "<<  TARGET server (phase 2)`r`nCopy from the exchange path + restore / attach. Reads the state file."
     $btnTarget.TextAlign= 'MiddleLeft'
     $btnTarget.Padding  = New-Object System.Windows.Forms.Padding(10,0,0,0)
     $btnTarget.DialogResult = [System.Windows.Forms.DialogResult]::No    # No = Target
@@ -209,7 +209,7 @@ function Show-RoleDialog {
     $btnAuto.FlatStyle= 'Flat'
     $btnAuto.FlatAppearance.BorderColor = $clrAccentAmb
     $btnAuto.FlatAppearance.BorderSize  = 2
-    $btnAuto.Text     = "**  AUTOMATISCH erkennen`r`nZustandsdatei vorhanden -> Ziel; sonst -> Quelle."
+    $btnAuto.Text     = "**  DETECT AUTOMATICALLY`r`nState file present -> target; otherwise -> source."
     $btnAuto.TextAlign= 'MiddleLeft'
     $btnAuto.Padding  = New-Object System.Windows.Forms.Padding(10,0,0,0)
     $btnAuto.DialogResult = [System.Windows.Forms.DialogResult]::Retry   # Retry = Auto
@@ -314,19 +314,19 @@ function Update-OperationProgress {
             if ($bps -gt 0) {
                 $speed = ', {0:N0} MB/s' -f ($bps / 1MB)
                 $min = [math]::Ceiling((($cp.Total - $cp.Bytes) / $bps) / 60)
-                if ($min -gt 0) { $eta = ", noch ca. $min min" }
+                if ($min -gt 0) { $eta = ", approx. $min min left" }
             }
         }
         $script:CopyPrev = $cp
         $ops += [pscustomobject]@{
-            Label = 'Kopie'; Command = 'KOPIERE'; Database = $cp.File; Percent = $pct; EtaMin = 0
+            Label = 'Copy'; Command = 'COPYING'; Database = $cp.File; Percent = $pct; EtaMin = 0
             Extra = ('{0:N1} / {1:N1} GB{2}{3}' -f ($cp.Bytes / 1GB), ($cp.Total / 1GB), $speed, $eta)
         }
     } else { $script:CopyPrev = $null }
 
     if ($ops.Count -gt 0) {
         $txt = ($ops | ForEach-Object {
-            $eta = if ($_.EtaMin -gt 0) { ", noch ca. $($_.EtaMin) min" } else { '' }
+            $eta = if ($_.EtaMin -gt 0) { ", approx. $($_.EtaMin) min left" } else { '' }
             $db  = if ($_.Database) { " $($_.Database)" } else { '' }
             $ex  = if ($_.PSObject.Properties['Extra'] -and $_.Extra) { " ($($_.Extra))" } else { '' }
             "[$($_.Label)] $($_.Command)$db $($_.Percent) %$ex$eta"
@@ -334,7 +334,7 @@ function Update-OperationProgress {
         $lblProgress.Text = $txt
         $progress.Value = [math]::Min(100, [math]::Max(0, ($ops | Measure-Object Percent -Maximum).Maximum))
     } else {
-        $lblProgress.Text = 'kein Backup/Restore aktiv (siehe Statuszeile)'
+        $lblProgress.Text = 'no backup/restore active (see status bar)'
     }
 }
 
@@ -351,7 +351,7 @@ function Stop-OperationProgress {
 # ===========================================================================
 function Show-ErrorDialog {
     param(
-        [string]$Title   = 'Fehler',
+        [string]$Title   = 'Error',
         [string]$Message
     )
     $dlgErr              = New-Object System.Windows.Forms.Form
@@ -364,7 +364,7 @@ function Show-ErrorDialog {
     $dlgErr.FormBorderStyle = 'Sizable'
 
     $lblErrHint          = New-Object System.Windows.Forms.Label
-    $lblErrHint.Text     = 'Vollstaendige Fehlermeldung (kann kopiert werden):'
+    $lblErrHint.Text     = 'Full error message (can be copied):'
     $lblErrHint.Font     = $fntBold
     $lblErrHint.ForeColor= [System.Drawing.Color]::FromArgb(220,53,69)
     $lblErrHint.AutoSize = $true
@@ -386,7 +386,7 @@ function Show-ErrorDialog {
     $dlgErr.Controls.Add($txtErr)
 
     $btnClose            = New-Object System.Windows.Forms.Button
-    $btnClose.Text       = 'Schliessen'
+    $btnClose.Text       = 'Close'
     $btnClose.Font       = $fntBold
     $btnClose.Size       = New-Object System.Drawing.Size(120, 28)
     $btnClose.Location   = New-Object System.Drawing.Point(10, 385)
@@ -451,7 +451,11 @@ function Set-ListViewData {
     $ListView.EndUpdate()
     # Zaehler-Label aktualisieren (Tag = Label-Referenz)
     if ($ListView.Tag -and $ListView.Tag -is [System.Windows.Forms.Label]) {
-        $ListView.Tag.Text = "$($ListView.CheckedItems.Count) / $($ListView.Items.Count) ausgewaehlt"
+        if ($ListView.CheckBoxes) {
+            $ListView.Tag.Text = "$($ListView.CheckedItems.Count) / $($ListView.Items.Count) selected"
+        } else {
+            $ListView.Tag.Text = "$($ListView.Items.Count) objects - migrated in full (choose types with 'Migrate:' below)"
+        }
     }
 }
 
@@ -598,7 +602,7 @@ if (-not $chosenRole -or $chosenRole -eq 'Auto') {
         $stateFile = Join-Path $Config.DefaultExchangePath $Config.StateFileName
         $chosenRole = if (Test-Path $stateFile) { 'Target' } else { 'Source' }
         Write-MigrationLog -Level 'INFO' -Category 'ROLE' `
-            -Message "Automatische Rolle: $chosenRole"
+            -Message "Automatic role: $chosenRole"
     }
 }
 $script:ActiveRole = $chosenRole
@@ -613,7 +617,7 @@ if ($script:ActiveRole -eq 'Target') {
 # ===========================================================================
 # HAUPTFENSTER
 # ===========================================================================
-$roleLabel = if ($script:ActiveRole -eq 'Source') { 'QUELL-SERVER' } else { 'ZIEL-SERVER' }
+$roleLabel = if ($script:ActiveRole -eq 'Source') { 'SOURCE SERVER' } else { 'TARGET SERVER' }
 $roleColor = if ($script:ActiveRole -eq 'Source') { $clrAccent } else { $clrAccentGrn }
 
 $yearSpan = "2025-$((Get-Date).ToString('yy'))"
@@ -678,7 +682,7 @@ $script:statusLabel.ForeColor= $clrText
 $script:statusLabel.BackColor= [System.Drawing.Color]::FromArgb(23,162,184)
 $script:statusLabel.TextAlign= 'MiddleLeft'
 $script:statusLabel.Padding  = New-Object System.Windows.Forms.Padding(10,0,0,0)
-$script:statusLabel.Text     = "  Bereit. Bitte $roleLabel verbinden."
+$script:statusLabel.Text     = "  Ready. Please connect the $roleLabel."
 $pnlStatus.Controls.Add($script:statusLabel)
 
 # ---------------------------------------------------------------------------
@@ -706,7 +710,7 @@ $lblCaption.Location  = New-Object System.Drawing.Point(10,7)
 $pnlHead.Controls.Add($lblCaption)
 
 $lblConnState        = New-Object System.Windows.Forms.Label
-$lblConnState.Text   = '* Nicht verbunden'
+$lblConnState.Text   = '* Not connected'
 $lblConnState.Font   = $fntSmall
 $lblConnState.ForeColor = [System.Drawing.Color]::FromArgb(220,53,69)
 $lblConnState.AutoSize  = $true
@@ -760,7 +764,7 @@ function New-ServerRow {
     $pnlConn.Controls.Add($r.Auth)
 
     $r.UserLbl = New-Object System.Windows.Forms.Label
-    $r.UserLbl.Text = 'Benutzer:'; $r.UserLbl.Font = $fntSmall; $r.UserLbl.ForeColor = $clrSubText
+    $r.UserLbl.Text = 'User:'; $r.UserLbl.Font = $fntSmall; $r.UserLbl.ForeColor = $clrSubText
     $r.UserLbl.AutoSize = $true; $r.UserLbl.Visible = $false
     $r.UserLbl.Location = New-Object System.Drawing.Point(512, ($Y + 3))
     $pnlConn.Controls.Add($r.UserLbl)
@@ -773,7 +777,7 @@ function New-ServerRow {
     $pnlConn.Controls.Add($r.User)
 
     $r.PwdLbl = New-Object System.Windows.Forms.Label
-    $r.PwdLbl.Text = 'Passwort:'; $r.PwdLbl.Font = $fntSmall; $r.PwdLbl.ForeColor = $clrSubText
+    $r.PwdLbl.Text = 'Password:'; $r.PwdLbl.Font = $fntSmall; $r.PwdLbl.ForeColor = $clrSubText
     $r.PwdLbl.AutoSize = $true; $r.PwdLbl.Visible = $false
     $r.PwdLbl.Location = New-Object System.Drawing.Point(690, ($Y + 3))
     $pnlConn.Controls.Add($r.PwdLbl)
@@ -786,7 +790,7 @@ function New-ServerRow {
     $pnlConn.Controls.Add($r.Pwd)
 
     $r.Connect = New-Object System.Windows.Forms.Button
-    $r.Connect.Text = 'Verbinden'
+    $r.Connect.Text = 'Connect'
     $r.Connect.Font = if ($IsActive) { $fntBold } else { $fntSmall }
     $r.Connect.Size = New-Object System.Drawing.Size(90, 24)
     $r.Connect.Location = New-Object System.Drawing.Point(880, ($Y - 1))
@@ -814,7 +818,7 @@ function ConvertTo-SecureFromText {
     return $ss
 }
 
-$srcLabel = 'Quellserver:'; $tgtLabel = 'Zielserver:'
+$srcLabel = 'Source server:'; $tgtLabel = 'Target server:'
 $rowSrc = New-ServerRow -LabelText $srcLabel -Y 8  -IsActive ($script:ActiveRole -eq 'Source')
 $rowTgt = New-ServerRow -LabelText $tgtLabel -Y 38 -IsActive ($script:ActiveRole -ne 'Source')
 $rowA = if ($script:ActiveRole -eq 'Source') { $rowSrc } else { $rowTgt }   # verbundener Server
@@ -838,7 +842,7 @@ if ($script:ActiveRole -eq 'Target' -and $script:LoadedState -and $script:Loaded
 }
 
 $btnDisconnect = New-Object System.Windows.Forms.Button
-$btnDisconnect.Text = 'Trennen'; $btnDisconnect.Font = $fntSmall
+$btnDisconnect.Text = 'Disconnect'; $btnDisconnect.Font = $fntSmall
 $btnDisconnect.Size = New-Object System.Drawing.Size(70, 24)
 $btnDisconnect.Location = New-Object System.Drawing.Point(978, ($rowActive - 1))
 $btnDisconnect.BackColor = [System.Drawing.Color]::FromArgb(60,63,70)
@@ -854,7 +858,7 @@ $pnlConn.Controls.Add($lblInfo)
 
 # Zeile 3: TrustServerCertificate (gilt fuer beide Server) + Verfahren
 $chkTrust = New-Object System.Windows.Forms.CheckBox
-$chkTrust.Text     = 'TrustServerCertificate (SQL 2022 / selbstsigniertes Zertifikat)'
+$chkTrust.Text     = 'TrustServerCertificate (SQL 2022 / self-signed certificate)'
 $chkTrust.Font     = $fntSmall
 $chkTrust.ForeColor= [System.Drawing.Color]::FromArgb(255,193,7)
 $chkTrust.AutoSize = $true
@@ -863,7 +867,7 @@ $chkTrust.Location = New-Object System.Drawing.Point(95, 70)
 $pnlConn.Controls.Add($chkTrust)
 
 $lblVerf = New-Object System.Windows.Forms.Label
-$lblVerf.Text = 'Verfahren:'; $lblVerf.Font = $fntSmall
+$lblVerf.Text = 'Procedure:'; $lblVerf.Font = $fntSmall
 $lblVerf.ForeColor = $clrSubText; $lblVerf.AutoSize = $true
 $lblVerf.Location = New-Object System.Drawing.Point(480, 73)
 $pnlConn.Controls.Add($lblVerf)
@@ -873,7 +877,7 @@ $cmbVerfahren.Font = $fntSmall; $cmbVerfahren.BackColor = $clrInput; $cmbVerfahr
 $cmbVerfahren.FlatStyle = 'Flat'; $cmbVerfahren.DropDownStyle = 'DropDownList'
 $cmbVerfahren.Size = New-Object System.Drawing.Size(90, 22)
 $cmbVerfahren.Location = New-Object System.Drawing.Point(545, 70)
-$cmbVerfahren.Items.AddRange(@('Auto','Direkt','Umweg')) | Out-Null
+$cmbVerfahren.Items.AddRange(@('Auto','Direct','Detour')) | Out-Null
 $cmbVerfahren.SelectedIndex = 0
 $pnlConn.Controls.Add($cmbVerfahren)
 
@@ -881,18 +885,18 @@ $pnlConn.Controls.Add($cmbVerfahren)
 $lblScenario = New-Object System.Windows.Forms.Label
 $lblScenario.Font = $fntSmall; $lblScenario.ForeColor = $clrSubText; $lblScenario.AutoSize = $true
 $lblScenario.Location = New-Object System.Drawing.Point(980, ($rowOther + 3))
-$lblScenario.Text = 'noch nicht geprueft'
+$lblScenario.Text = 'not checked yet'
 $pnlConn.Controls.Add($lblScenario)
 
 # Gegenstelle: Erreichbarkeit + Anmeldung pruefen (Verbinden in der Gegenstellen-Zeile)
 $btnCheck.Add_Click({
     $other = $txtOther.Text.Trim()
     if (-not $other) {
-        $lblScenario.Text = 'Bitte Server angeben'
+        $lblScenario.Text = 'Please enter a server'
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(255,193,7)
         return
     }
-    $lblScenario.Text = 'Pruefe...'; $lblScenario.ForeColor = $clrSubText
+    $lblScenario.Text = 'Checking...'; $lblScenario.ForeColor = $clrSubText
     $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
     [System.Windows.Forms.Application]::DoEvents()
     try {
@@ -914,7 +918,7 @@ $btnCheck.Add_Click({
     $script:LastCheckDirect = [bool]($reach -and $loginOk)
     Set-ActionLabels (Get-PlannedScenario)
     if ($reach -and $loginOk) {
-        $lblScenario.Text = "[OK] $other verbunden -> DIREKT moeglich"
+        $lblScenario.Text = "[OK] $other connected -> DIRECT possible"
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(40,167,69)
         # Exchange-Pfad automatisch auf das Backup-Verzeichnis des Ziels setzen
         # (Admin-Freigabe, z.B. \\SERVER\D$\MSSQL\Backup) - nur im Quell-Modus.
@@ -925,69 +929,16 @@ $btnCheck.Add_Click({
                 $unc = Get-TargetBackupUncPath @up
                 if ($unc) {
                     $txtExPath.Text = $unc
-                    $lblScenario.Text = "[OK] $other verbunden -> DIREKT; Exchange-Pfad gesetzt"
+                    $lblScenario.Text = "[OK] $other connected -> DIRECT; exchange path set"
                 }
             } catch { }
         }
     } elseif ($reach) {
-        $lblScenario.Text = "[!] $other erreichbar, Anmeldung fehlgeschlagen -> UMWEG (zweistufig)"
+        $lblScenario.Text = "[!] $other reachable, login failed -> DETOUR (two-phase)"
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(220,53,69)
     } else {
-        $lblScenario.Text = "[!] $other nicht erreichbar -> UMWEG (zweistufig)"
+        $lblScenario.Text = "[!] $other not reachable -> DETOUR (two-phase)"
         $lblScenario.ForeColor = [System.Drawing.Color]::FromArgb(255,140,0)
-    }
-})
-
-# --- Globale Auswahl-Leiste (alle Tabs) ---
-$pnlGlobalSel           = New-Object System.Windows.Forms.Panel
-$pnlGlobalSel.Dock      = 'Top'
-$pnlGlobalSel.Height    = 28
-$pnlGlobalSel.BackColor = $clrHeader
-$pnlMain.Controls.Add($pnlGlobalSel)
-
-$lblGlobal              = New-Object System.Windows.Forms.Label
-$lblGlobal.Text         = 'Alle Tabs:'
-$lblGlobal.Font         = $fntSmall
-$lblGlobal.ForeColor    = $clrSubText
-$lblGlobal.AutoSize     = $true
-$lblGlobal.Location     = New-Object System.Drawing.Point(6, 7)
-$pnlGlobalSel.Controls.Add($lblGlobal)
-
-$btnGlobalAll           = New-Object System.Windows.Forms.Button
-$btnGlobalAll.Text      = 'Alle markieren'
-$btnGlobalAll.Font      = $fntSmall
-$btnGlobalAll.Size      = New-Object System.Drawing.Size(110, 22)
-$btnGlobalAll.Location  = New-Object System.Drawing.Point(68, 3)
-$btnGlobalAll.BackColor = [System.Drawing.Color]::FromArgb(40,167,69)
-$btnGlobalAll.ForeColor = [System.Drawing.Color]::White
-$btnGlobalAll.FlatStyle = 'Flat'
-$btnGlobalAll.FlatAppearance.BorderSize = 0
-$pnlGlobalSel.Controls.Add($btnGlobalAll)
-
-$btnGlobalNone          = New-Object System.Windows.Forms.Button
-$btnGlobalNone.Text     = 'Alle abwaehlen'
-$btnGlobalNone.Font     = $fntSmall
-$btnGlobalNone.Size     = New-Object System.Drawing.Size(110, 22)
-$btnGlobalNone.Location = New-Object System.Drawing.Point(182, 3)
-$btnGlobalNone.BackColor= [System.Drawing.Color]::FromArgb(108,117,125)
-$btnGlobalNone.ForeColor= [System.Drawing.Color]::White
-$btnGlobalNone.FlatStyle= 'Flat'
-$btnGlobalNone.FlatAppearance.BorderSize = 0
-$pnlGlobalSel.Controls.Add($btnGlobalNone)
-
-# Globale Buttons: $script:_AllListViews wird nach Tab-Erstellung gesetzt
-$btnGlobalAll.Add_Click({
-    foreach ($lv_ in $script:_AllListViews) {
-        $lv_.BeginUpdate()
-        foreach ($item in $lv_.Items) { $item.Checked = $true }
-        $lv_.EndUpdate()
-    }
-})
-$btnGlobalNone.Add_Click({
-    foreach ($lv_ in $script:_AllListViews) {
-        $lv_.BeginUpdate()
-        foreach ($item in $lv_.Items) { $item.Checked = $false }
-        $lv_.EndUpdate()
     }
 })
 
@@ -1042,15 +993,13 @@ $pnlMain.Controls.Add($tabs)
 # Gewuenschte visuelle Reihenfolge von oben nach unten:
 #   pnlHead (Servertitel)
 #   pnlConn (Verbindung)
-#   pnlGlobalSel (Alle/Keine)
 #   tabs (Fill - Rest)
 $pnlMain.Controls.SetChildIndex($tabs,         0)  # Fill: immer Index 0
-$pnlMain.Controls.SetChildIndex($pnlGlobalSel, 1)  # unterste Top-Leiste
-$pnlMain.Controls.SetChildIndex($pnlConn,      2)  # darueber
-$pnlMain.Controls.SetChildIndex($pnlHead,      3)  # ganz oben
+$pnlMain.Controls.SetChildIndex($pnlConn,      1)  # unterste Top-Leiste
+$pnlMain.Controls.SetChildIndex($pnlHead,      2)  # ganz oben
 
 function New-ObjectTab {
-    param([string]$Title, [string[][]]$Columns)
+    param([string]$Title, [string[][]]$Columns, [switch]$Selectable)
     $tp = New-Object System.Windows.Forms.TabPage
     $tp.Text = $Title; $tp.BackColor = $clrBg; $tp.ForeColor = $clrText
     $tp.Padding = New-Object System.Windows.Forms.Padding(0)
@@ -1061,8 +1010,10 @@ function New-ObjectTab {
     $pnlBtn.Height     = 26
     $pnlBtn.BackColor  = $clrHeader
 
+    # Nur der Datenbanken-Tab ist eine echte Auswahl. Alle anderen Objekttypen werden
+    # komplett migriert und ueber die Checkboxen "Migrieren:" unten ein-/ausgeschaltet.
     $btnAll            = New-Object System.Windows.Forms.Button
-    $btnAll.Text       = 'Alle'
+    $btnAll.Text = 'All'
     $btnAll.Font       = $fntSmall
     $btnAll.Size       = New-Object System.Drawing.Size(55, 22)
     $btnAll.Location   = New-Object System.Drawing.Point(2, 2)
@@ -1073,7 +1024,7 @@ function New-ObjectTab {
     $pnlBtn.Controls.Add($btnAll)
 
     $btnNone           = New-Object System.Windows.Forms.Button
-    $btnNone.Text      = 'Keine'
+    $btnNone.Text = 'None'
     $btnNone.Font      = $fntSmall
     $btnNone.Size      = New-Object System.Drawing.Size(55, 22)
     $btnNone.Location  = New-Object System.Drawing.Point(60, 2)
@@ -1091,12 +1042,17 @@ function New-ObjectTab {
     $lblCount.Location = New-Object System.Drawing.Point(120, 5)
     $pnlBtn.Controls.Add($lblCount)
 
+    if (-not $Selectable) {
+        $btnAll.Visible = $false; $btnNone.Visible = $false
+        $lblCount.Location = New-Object System.Drawing.Point(6, 5)
+    }
+
     $tp.Controls.Add($pnlBtn)
 
     # --- ListView ---
     $lv = New-Object System.Windows.Forms.ListView
     $lv.Dock = 'Fill'; $lv.View = 'Details'; $lv.FullRowSelect = $true
-    $lv.GridLines = $true; $lv.CheckBoxes = $true
+    $lv.GridLines = $true; $lv.CheckBoxes = [bool]$Selectable
     $lv.BackColor = [System.Drawing.Color]::White; $lv.ForeColor = [System.Drawing.Color]::FromArgb(30,34,42)
     $lv.BorderStyle = 'None'; $lv.Font = $fntSmall; $lv.MultiSelect = $true
     foreach ($col in $Columns) {
@@ -1124,12 +1080,13 @@ function New-ObjectTab {
 
     # Zaehler aktualisieren wenn Checked-Status sich aendert
     $lv.Tag = $lblCount
+    if (-not $Selectable) { $lblCount.Text = 'View only - choose types with "Migrate:" below' }
     $lv.Add_ItemChecked({
         $lbl_ = $this.Tag
         if ($lbl_) {
             $checked_ = ($this.CheckedItems.Count)
             $total_   = ($this.Items.Count)
-            $lbl_.Text = "$checked_ / $total_ ausgewaehlt"
+            $lbl_.Text = "$checked_ / $total_ selected"
         }
     })
 
@@ -1142,27 +1099,24 @@ function New-ObjectTab {
     return $lv
 }
 
-$lvDbs    = New-ObjectTab 'Datenbanken' @(
+$lvDbs    = New-ObjectTab 'Databases' @(
                 @('Name','160'),@('Status','70'),@('RecoveryModel','80'),
-                @('SizeGB','65'),@('Compatibility','90'),@('Owner','110'))
+                @('SizeGB','65'),@('Compatibility','90'),@('Owner','110')) -Selectable
 $lvLogins = New-ObjectTab 'Logins' @(
-                @('Name','180'),@('Typ','90'),@('Disabled','60'),
-                @('Locked','55'),@('System','55'),@('Erstellt','120'))
-$lvUsers  = New-ObjectTab 'DB-User' @(
-                @('Datenbank','140'),@('User','140'),@('LoginTyp','90'),
+                @('Name','180'),@('Type','90'),@('Disabled','60'),
+                @('Locked','55'),@('System','55'),@('Created','120'))
+$lvUsers  = New-ObjectTab 'DB Users' @(
+                @('Database','140'),@('User','140'),@('LoginType','90'),
                 @('Login','130'),@('System','55'))
-$lvLS     = New-ObjectTab 'Linked Server' @(
+$lvLS     = New-ObjectTab 'Linked Servers' @(
                 @('Name','160'),@('Provider','110'),@('DataSource','160'),@('Product','100'))
 $lvJobs   = New-ObjectTab 'Agent Jobs' @(
-                @('Name','200'),@('Kategorie','110'),@('Owner','110'),
-                @('Aktiv','50'),@('LetzterLauf','130'))
+                @('Name','200'),@('Category','110'),@('Owner','110'),
+                @('Active','50'),@('LastRun','130'))
 $lvCreds  = New-ObjectTab 'Credentials' @(
-                @('Name','160'),@('Identity','160'),@('Erstellt','120'))
+                @('Name','160'),@('Identity','160'),@('Created','120'))
 $lvProx   = New-ObjectTab 'Proxies' @(
-                @('Name','160'),@('Credential','140'),@('Aktiv','50'),@('Beschreibung','200'))
-
-# Liste aller ListViews fuer globale Alle/Keine Buttons
-$script:_AllListViews = @($lvDbs,$lvLogins,$lvUsers,$lvLS,$lvJobs,$lvCreds,$lvProx)
+                @('Name','160'),@('Credential','140'),@('Active','50'),@('Description','200'))
 
 # Tab-Breiten initial auf volle Breite ziehen (nach dem Anlegen aller Tabs)
 & $script:FitTabWidth
@@ -1185,13 +1139,13 @@ $btnConnect.Add_Click({
 
     if (-not $script:_ConnSrvName) {
         [System.Windows.Forms.MessageBox]::Show(
-            'Bitte Servernamen eingeben.','Hinweis','OK','Warning') | Out-Null
+            'Please enter a server name.','Notice','OK','Warning') | Out-Null
         return
     }
     $btnConnect.Enabled = $false; $btnConnect.Text = '...'
-    $lblConnState.Text = '* Verbinde...'
+    $lblConnState.Text = '* Connecting...'
     $lblConnState.ForeColor = [System.Drawing.Color]::FromArgb(255,193,7)
-    Update-StatusBar "Verbinde mit $($script:_ConnSrvName) ..."
+    Update-StatusBar "Connecting to $($script:_ConnSrvName) ..."
 
     Invoke-BackgroundJob -ScriptBlock {
         param($srv, $auth, $user, $pwdSS, $timeout, $trust)
@@ -1212,14 +1166,14 @@ $btnConnect.Add_Click({
 
         $lblInfo.Invoke([Action]{ $lblInfo.Text = $conn.VersionString })
         $lblConnState.Invoke([Action]{
-            $lblConnState.Text     = "* Verbunden: $($script:_ConnSrvName)"
+            $lblConnState.Text     = "* Connected: $($script:_ConnSrvName)"
             $lblConnState.ForeColor= [System.Drawing.Color]::FromArgb(40,167,69)
         })
         $btnConnect.Invoke([Action]{
-            $btnConnect.Enabled = $true; $btnConnect.Text = 'Neu laden'
+            $btnConnect.Enabled = $true; $btnConnect.Text = 'Reload'
         })
         $btnDisconnect.Invoke([Action]{ $btnDisconnect.Enabled = $true })
-        Update-StatusBar "Verbunden mit $($script:_ConnSrvName). Lade Objekte..." 'Info'
+        Update-StatusBar "Connected to $($script:_ConnSrvName). Loading objects..." 'Info'
 
         $dbs    = Get-SqlDatabases    -Server $conn -ExcludeSystem
         $logins = Get-SqlLogins       -Server $conn
@@ -1250,32 +1204,32 @@ $btnConnect.Add_Click({
         $lvProx.Invoke([Action]{
             Set-ListViewData $lvProx $prox @('Name','CredentialName','IsEnabled','Description')
         })
-        Update-StatusBar "Objekte geladen von $($script:_ConnSrvName)" 'Success'
+        Update-StatusBar "Objects loaded from $($script:_ConnSrvName)" 'Success'
 
     } -OnError {
         param($err)
         $btnConnect.Invoke([Action]{
-            $btnConnect.Enabled = $true; $btnConnect.Text = 'Verbinden'
+            $btnConnect.Enabled = $true; $btnConnect.Text = 'Connect'
         })
         $lblConnState.Invoke([Action]{
-            $lblConnState.Text = '* Fehler'
+            $lblConnState.Text = '* Error'
             $lblConnState.ForeColor = [System.Drawing.Color]::FromArgb(220,53,69)
         })
-        Update-StatusBar "Verbindungsfehler - Details im Fehler-Dialog" 'Error'
-        Show-ErrorDialog -Title 'Verbindungsfehler' -Message $err
+        Update-StatusBar "Connection error - details in the error dialog" 'Error'
+        Show-ErrorDialog -Title 'Connection error' -Message $err
     }
 })
 
 $btnDisconnect.Add_Click({
     $script:ActiveServer = $null
-    $lblConnState.Text = '* Nicht verbunden'
+    $lblConnState.Text = '* Not connected'
     $lblConnState.ForeColor = [System.Drawing.Color]::FromArgb(220,53,69)
-    $btnDisconnect.Enabled = $false; $btnConnect.Text = 'Verbinden'
+    $btnDisconnect.Enabled = $false; $btnConnect.Text = 'Connect'
     foreach ($lv in @($lvDbs,$lvLogins,$lvUsers,$lvLS,$lvJobs,$lvCreds,$lvProx)) {
         $lv.Items.Clear()
     }
     $lblInfo.Text = ''
-    Update-StatusBar 'Verbindung getrennt.'
+    Update-StatusBar 'Disconnected.'
 })
 
 # ===========================================================================
@@ -1295,9 +1249,9 @@ $pnlMigration.Controls.Add($pnlDivider)
 
 $lblMigTitle = New-Object System.Windows.Forms.Label
 $lblMigTitle.Text = if ($script:ActiveRole -eq 'Source') {
-    '**  PHASE 1 - QUELLE: Backup / Detach + Copy'
+    '**  PHASE 1 - SOURCE: Backup / Detach + Copy'
 } else {
-    '**  PHASE 2 - ZIEL: Copy + Restore / Attach'
+    '**  PHASE 2 - TARGET: Copy + Restore / Attach'
 }
 $lblMigTitle.Font = $fntBold; $lblMigTitle.ForeColor = $roleColor
 $lblMigTitle.AutoSize = $true; $lblMigTitle.Location = New-Object System.Drawing.Point(10,12)
@@ -1305,7 +1259,7 @@ $pnlMigration.Controls.Add($lblMigTitle)
 
 # --- Methode ---
 $lblMethod = New-Object System.Windows.Forms.Label
-$lblMethod.Text = 'Methode:'; $lblMethod.Font = $fntSmall
+$lblMethod.Text = 'Method:'; $lblMethod.Font = $fntSmall
 $lblMethod.ForeColor = $clrSubText; $lblMethod.AutoSize = $true
 $lblMethod.Location = New-Object System.Drawing.Point(10,42)
 $pnlMigration.Controls.Add($lblMethod)
@@ -1328,7 +1282,7 @@ $pnlMigration.Controls.Add($cmbMethod)
 
 # --- Exchange-Pfad ---
 $lblBpth = New-Object System.Windows.Forms.Label
-$lblBpth.Text = 'Exchange-Pfad:'; $lblBpth.Font = $fntSmall
+$lblBpth.Text = 'Exchange path:'; $lblBpth.Font = $fntSmall
 $lblBpth.ForeColor = $clrSubText; $lblBpth.AutoSize = $false
 $lblBpth.Size = New-Object System.Drawing.Size(105,18); $lblBpth.TextAlign = 'MiddleRight'
 $lblBpth.Location = New-Object System.Drawing.Point(245,41)
@@ -1351,7 +1305,7 @@ $btnBrowseEx.ForeColor = $clrText; $btnBrowseEx.FlatStyle = 'Flat'
 $btnBrowseEx.FlatAppearance.BorderSize = 0
 $btnBrowseEx.Add_Click({
     $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fbd.Description = 'Exchange-Verzeichnis waehlen'
+    $fbd.Description = 'Select exchange directory'
     $fbd.SelectedPath = $txtExPath.Text
     if ($fbd.ShowDialog() -eq 'OK') {
         $txtExPath.Text = $fbd.SelectedPath
@@ -1362,7 +1316,7 @@ $pnlMigration.Controls.Add($btnBrowseEx)
 
 # --- Lokaler Backup-Pfad ---
 $lblLPath = New-Object System.Windows.Forms.Label
-$lblLPath.Text = 'Lokaler Backup-Pfad:'; $lblLPath.Font = $fntSmall
+$lblLPath.Text = 'Local backup path:'; $lblLPath.Font = $fntSmall
 $lblLPath.ForeColor = $clrSubText; $lblLPath.AutoSize = $false
 $lblLPath.Size = New-Object System.Drawing.Size(105,18); $lblLPath.TextAlign = 'MiddleRight'
 $lblLPath.Location = New-Object System.Drawing.Point(245,71)
@@ -1385,7 +1339,7 @@ $btnBrowseL.ForeColor = $clrText; $btnBrowseL.FlatStyle = 'Flat'
 $btnBrowseL.FlatAppearance.BorderSize = 0
 $btnBrowseL.Add_Click({
     $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fbd.Description = 'Lokalen Backup-Pfad waehlen'
+    $fbd.Description = 'Select local backup path'
     $fbd.SelectedPath = $txtLPath.Text
     if ($fbd.ShowDialog() -eq 'OK') {
         $txtLPath.Text = $fbd.SelectedPath
@@ -1395,7 +1349,7 @@ $btnBrowseL.Add_Click({
 $pnlMigration.Controls.Add($btnBrowseL)
 
 $lblLPathHint = New-Object System.Windows.Forms.Label
-$lblLPathHint.Text = '(Fallback wenn Dienstkonto keinen UNC-Zugriff hat)'
+$lblLPathHint.Text = '(fallback if the service account has no UNC access)'
 $lblLPathHint.Font = $fntSmall; $lblLPathHint.ForeColor = $clrSubText
 $lblLPathHint.AutoSize = $true
 $lblLPathHint.Location = New-Object System.Drawing.Point(710,73)
@@ -1403,14 +1357,14 @@ $pnlMigration.Controls.Add($lblLPathHint)
 
 # --- Optionen (nur Quell-Modus) ---
 $chkWhatIf = New-Object System.Windows.Forms.CheckBox
-$chkWhatIf.Text = 'WhatIf (nur simulieren)'; $chkWhatIf.Font = $fntSmall
+$chkWhatIf.Text = 'WhatIf (simulate only)'; $chkWhatIf.Font = $fntSmall
 $chkWhatIf.ForeColor = [System.Drawing.Color]::FromArgb(255,193,7)
 $chkWhatIf.AutoSize = $true
 $chkWhatIf.Location = New-Object System.Drawing.Point(10,102)
 $pnlMigration.Controls.Add($chkWhatIf)
 
 $chkReattach = New-Object System.Windows.Forms.CheckBox
-$chkReattach.Text = 'Quelle Re-Attach nach Detach'; $chkReattach.Font = $fntSmall
+$chkReattach.Text = 'Re-attach source after detach'; $chkReattach.Font = $fntSmall
 $chkReattach.ForeColor = $clrText; $chkReattach.AutoSize = $true; $chkReattach.Checked = $true
 $chkReattach.Location = New-Object System.Drawing.Point(200,102); $chkReattach.Visible = $false
 $pnlMigration.Controls.Add($chkReattach)
@@ -1422,7 +1376,7 @@ $cmbMethod.Add_SelectedIndexChanged({
 
 # --- Objekt-Auswahl (nur Quell-Modus sinnvoll; im Ziel aus Zustandsdatei) ---
 $lblMigObj = New-Object System.Windows.Forms.Label
-$lblMigObj.Text = 'Migrieren:'; $lblMigObj.Font = $fntSmall
+$lblMigObj.Text = 'Migrate:'; $lblMigObj.Font = $fntSmall
 $lblMigObj.ForeColor = $clrSubText; $lblMigObj.AutoSize = $true
 $lblMigObj.Location = New-Object System.Drawing.Point(10,130)
 $pnlMigration.Controls.Add($lblMigObj)
@@ -1435,11 +1389,20 @@ $migObjects = [ordered]@{
     'Credentials'    = $true
     'Proxies'        = $true
 }
+# Keys stay unchanged (state file + modules use them); only the display text is English.
+$script:MigDisplay = @{
+    'Datenbanken'   = 'Databases'
+    'Logins'        = 'Logins'
+    'Linked Server' = 'Linked Servers'
+    'Agent Jobs'    = 'Agent Jobs'
+    'Credentials'   = 'Credentials'
+    'Proxies'       = 'Proxies'
+}
 $script:MigChkBoxes = @{}
 $xPos = 90
 foreach ($kv in $migObjects.GetEnumerator()) {
     $chk = New-Object System.Windows.Forms.CheckBox
-    $chk.Text = $kv.Key; $chk.Checked = $kv.Value
+    $chk.Text = $script:MigDisplay[$kv.Key]; $chk.Checked = $kv.Value
     $chk.Font = $fntSmall; $chk.ForeColor = $clrText
     $chk.AutoSize = $true
     $chk.Location = New-Object System.Drawing.Point($xPos, 128)
@@ -1456,25 +1419,49 @@ foreach ($kv in $migObjects.GetEnumerator()) {
     $xPos += 115
 }
 
+# Alle/Keine fuer die Objekttypen (im Ziel-Modus gesperrt, Vorbelegung kommt aus der Zustandsdatei)
+$btnMigAll = New-Object System.Windows.Forms.Button
+$btnMigAll.Text = 'All'; $btnMigAll.Font = $fntSmall
+$btnMigAll.Size = New-Object System.Drawing.Size(55,22)
+$btnMigAll.Location = New-Object System.Drawing.Point($xPos, 126)
+$btnMigAll.BackColor = [System.Drawing.Color]::FromArgb(40,167,69)
+$btnMigAll.ForeColor = [System.Drawing.Color]::White
+$btnMigAll.FlatStyle = 'Flat'; $btnMigAll.FlatAppearance.BorderSize = 0
+$btnMigAll.Add_Click({ foreach ($c_ in $script:MigChkBoxes.Values) { if ($c_.Enabled) { $c_.Checked = $true } } })
+$pnlMigration.Controls.Add($btnMigAll)
+
+$btnMigNone = New-Object System.Windows.Forms.Button
+$btnMigNone.Text = 'None'; $btnMigNone.Font = $fntSmall
+$btnMigNone.Size = New-Object System.Drawing.Size(55,22)
+$btnMigNone.Location = New-Object System.Drawing.Point(($xPos + 58), 126)
+$btnMigNone.BackColor = [System.Drawing.Color]::FromArgb(108,117,125)
+$btnMigNone.ForeColor = [System.Drawing.Color]::White
+$btnMigNone.FlatStyle = 'Flat'; $btnMigNone.FlatAppearance.BorderSize = 0
+$btnMigNone.Add_Click({ foreach ($c_ in $script:MigChkBoxes.Values) { if ($c_.Enabled) { $c_.Checked = $false } } })
+$pnlMigration.Controls.Add($btnMigNone)
+if ($script:ActiveRole -eq 'Target') { $btnMigAll.Enabled = $false; $btnMigNone.Enabled = $false }
+
 # --- Progress ---
 $progress = New-Object System.Windows.Forms.ProgressBar
 $progress.Style = 'Continuous'
-$progress.Size = New-Object System.Drawing.Size(600,16)
+$progress.Size = New-Object System.Drawing.Size(($btnMigNone.Right - 10),16)
 $progress.Location = New-Object System.Drawing.Point(10,158)
 $progress.BackColor = $clrInput; $progress.ForeColor = $roleColor
 $pnlMigration.Controls.Add($progress)
 
 $lblProgress = New-Object System.Windows.Forms.Label
 $lblProgress.Text = ''; $lblProgress.Font = $fntSmall
-$lblProgress.ForeColor = $clrSubText; $lblProgress.AutoSize = $true
-$lblProgress.Location = New-Object System.Drawing.Point(620,161)
+$lblProgress.ForeColor = $clrSubText
+$lblProgress.AutoSize = $false; $lblProgress.AutoEllipsis = $true
+$lblProgress.Size = New-Object System.Drawing.Size((($btnMigNone.Right - 170) - 8 - 330),18)
+$lblProgress.Location = New-Object System.Drawing.Point(330,191)
 $pnlMigration.Controls.Add($lblProgress)
 
 # --- Buttons ---
 $btnActionText = if ($script:ActiveRole -eq 'Source') {
-    '>>  PHASE 1 STARTEN  (Backup / Detach + Copy)'
+    '>>  START PHASE 1  (Backup / Detach + Copy)'
 } else {
-    '>>  PHASE 2 STARTEN  (Restore / Attach)'
+    '>>  START PHASE 2  (Restore / Attach)'
 }
 
 $btnMigrate = New-Object System.Windows.Forms.Button
@@ -1490,18 +1477,18 @@ $script:LastCheckDirect = $null
 function Set-ActionLabels {
     param([string]$Scenario)
     if ($script:ActiveRole -eq 'Source' -and $Scenario -eq 'Direct') {
-        $lblMigTitle.Text  = '**  MIGRATION  QUELLE -> ZIEL: Backup + Kopie + Restore (ein Durchlauf)'
-        $btnMigrate.Text   = '>>  MIGRATION STARTEN  (Backup + Restore)'
+        $lblMigTitle.Text  = '**  MIGRATION  SOURCE -> TARGET: Backup + Copy + Restore (single run)'
+        $btnMigrate.Text   = '>>  START MIGRATION  (Backup + Restore)'
     }
     elseif ($script:ActiveRole -eq 'Source') {
-        $lblMigTitle.Text  = '**  PHASE 1 - QUELLE: Backup / Detach + Copy'
-        $btnMigrate.Text   = '>>  PHASE 1 STARTEN  (Backup / Detach + Copy)'
+        $lblMigTitle.Text  = '**  PHASE 1 - SOURCE: Backup / Detach + Copy'
+        $btnMigrate.Text   = '>>  START PHASE 1  (Backup / Detach + Copy)'
     }
 }
 function Get-PlannedScenario {
     switch ($cmbVerfahren.SelectedItem) {
-        'Direkt' { return 'Direct' }
-        'Umweg'  { return 'TwoPhase' }
+        'Direct' { return 'Direct' }
+        'Detour'  { return 'TwoPhase' }
         default  { if ($script:LastCheckDirect) { return 'Direct' } else { return 'TwoPhase' } }
     }
 }
@@ -1510,28 +1497,28 @@ $cmbVerfahren.Add_SelectedIndexChanged({ Set-ActionLabels (Get-PlannedScenario) 
 $btnOpenLog = New-Object System.Windows.Forms.Button
 $btnOpenLog.Text = '[Log]'; $btnOpenLog.Font = $fntSmall
 $btnOpenLog.Size = New-Object System.Drawing.Size(80,34)
-$btnOpenLog.Location = New-Object System.Drawing.Point(330,183)
+$btnOpenLog.Location = New-Object System.Drawing.Point(($btnMigNone.Right - 170),183)
 $btnOpenLog.BackColor = [System.Drawing.Color]::FromArgb(60,63,70)
 $btnOpenLog.ForeColor = $clrText; $btnOpenLog.FlatStyle = 'Flat'
 $btnOpenLog.FlatAppearance.BorderSize = 0
 $btnOpenLog.Add_Click({
     $lp = Get-MigrationLogPath
     if ($lp -and (Test-Path $lp)) { Start-Process notepad.exe -ArgumentList $lp }
-    else { [System.Windows.Forms.MessageBox]::Show('Logdatei nicht gefunden.','Hinweis','OK','Info') | Out-Null }
+    else { [System.Windows.Forms.MessageBox]::Show('Log file not found.','Notice','OK','Info') | Out-Null }
 })
 $pnlMigration.Controls.Add($btnOpenLog)
 
 $btnOpenCsv = New-Object System.Windows.Forms.Button
 $btnOpenCsv.Text = '[CSV]'; $btnOpenCsv.Font = $fntSmall
 $btnOpenCsv.Size = New-Object System.Drawing.Size(80,34)
-$btnOpenCsv.Location = New-Object System.Drawing.Point(420,183)
+$btnOpenCsv.Location = New-Object System.Drawing.Point(($btnMigNone.Right - 80),183)
 $btnOpenCsv.BackColor = [System.Drawing.Color]::FromArgb(60,63,70)
 $btnOpenCsv.ForeColor = $clrText; $btnOpenCsv.FlatStyle = 'Flat'
 $btnOpenCsv.FlatAppearance.BorderSize = 0
 $btnOpenCsv.Add_Click({
     $cp = Get-MigrationCsvPath
     if ($cp -and (Test-Path $cp)) { Start-Process $cp }
-    else { [System.Windows.Forms.MessageBox]::Show('CSV nicht gefunden.','Hinweis','OK','Info') | Out-Null }
+    else { [System.Windows.Forms.MessageBox]::Show('CSV not found.','Notice','OK','Info') | Out-Null }
 })
 $pnlMigration.Controls.Add($btnOpenCsv)
 
@@ -1542,7 +1529,7 @@ $btnMigrate.Add_Click({
 
     if (-not $script:ActiveServer) {
         [System.Windows.Forms.MessageBox]::Show(
-            "Bitte zuerst $roleLabel verbinden.",'Hinweis','OK','Warning') | Out-Null
+            "Please connect the $roleLabel first.",'Notice','OK','Warning') | Out-Null
         return
     }
 
@@ -1554,17 +1541,17 @@ $btnMigrate.Add_Click({
 
     if (-not $exPath) {
         [System.Windows.Forms.MessageBox]::Show(
-            'Bitte Exchange-Pfad angeben.','Hinweis','OK','Warning') | Out-Null
+            'Please enter the exchange path.','Notice','OK','Warning') | Out-Null
         return
     }
 
     # UNC-Zugriff testen (Admin-Credentials)
-    Update-StatusBar "Pruefe Exchange-Pfad ..." 'Info'
+    Update-StatusBar "Checking exchange path ..." 'Info'
     if (-not (Test-UncAccess -Path $exPath -TimeoutSec $Config.UncAccessTestTimeoutSec)) {
         [System.Windows.Forms.MessageBox]::Show(
-            "Exchange-Pfad nicht erreichbar:`n$exPath`n`nBitte Pfad pruefen.",
-            'Pfad nicht erreichbar','OK','Error') | Out-Null
-        Update-StatusBar "Exchange-Pfad nicht erreichbar." 'Error'
+            "Exchange path not reachable:`n$exPath`n`nPlease check the path.",
+            'Path not reachable','OK','Error') | Out-Null
+        Update-StatusBar "Exchange path not reachable." 'Error'
         return
     }
 
@@ -1572,7 +1559,7 @@ $btnMigrate.Add_Click({
     $selDbs = @($lvDbs.CheckedItems | ForEach-Object { $_.Text })
     if ($selDbs.Count -eq 0 -and $script:MigChkBoxes['Datenbanken'].Checked) {
         [System.Windows.Forms.MessageBox]::Show(
-            'Bitte mindestens eine Datenbank auswaehlen.','Hinweis','OK','Warning') | Out-Null
+            'Please select at least one database.','Notice','OK','Warning') | Out-Null
         return
     }
 
@@ -1588,8 +1575,8 @@ $btnMigrate.Add_Click({
     $scenario = 'TwoPhase'
     if ($script:ActiveRole -eq 'Source') {
         switch ($verfahren) {
-            'Direkt' { $scenario = 'Direct' }
-            'Umweg'  { $scenario = 'TwoPhase' }
+            'Direct' { $scenario = 'Direct' }
+            'Detour'  { $scenario = 'TwoPhase' }
             default  {
                 if ($script:OtherServer -and (Test-ServerReachable -ServerInstance $script:OtherServer -TimeoutMs 3000)) {
                     $scenario = 'Direct'
@@ -1598,7 +1585,7 @@ $btnMigrate.Add_Click({
         }
         if ($scenario -eq 'Direct' -and -not $script:OtherServer) {
             [System.Windows.Forms.MessageBox]::Show(
-                'Direkt-Verfahren benoetigt einen Zielserver (Gegenstelle).','Hinweis','OK','Warning') | Out-Null
+                'The Direct procedure needs a target server (counterpart).','Notice','OK','Warning') | Out-Null
             return
         }
     }
@@ -1611,25 +1598,25 @@ $btnMigrate.Add_Click({
     # Zusammenfassung
     $phaseInfo = if ($script:ActiveRole -eq 'Source') {
         if ($scenario -eq 'Direct') {
-            "Szenario:    Direct (Zielserver erreichbar, UNC-Fallback aktiv)`n"
+            "Scenario:    Direct (target reachable, UNC fallback active)`n"
         } else {
-            "Szenario:    TwoPhase (nur Phase 1 - Quelle)`n"
+            "Scenario:    TwoPhase (phase 1 only - source)`n"
         }
     } else {
-        "Szenario:    Phase 2 - Ziel`n"
+        "Scenario:    Phase 2 - target`n"
     }
 
     $summary  = $phaseInfo
-    $summary += "Methode:     $method`n"
+    $summary += "Method:      $method`n"
     $summary += "WhatIf:      $whatif`n"
     $summary += "Exchange:    $exPath`n"
-    $summary += "Lokal:       $lPath`n"
+    $summary += "Local:       $lPath`n"
     if ($selDbs.Count -gt 0) {
-        $summary += "Datenbanken: $($selDbs -join ', ')`n"
+        $summary += "Databases:   $($selDbs -join ', ')`n"
     }
-    $summary += "`nObjekte:`n"
+    $summary += "`nObjects:`n"
     foreach ($kv in $migChks.GetEnumerator()) {
-        if ($kv.Value) { $summary += "  [x] $($kv.Key)`n" }
+        if ($kv.Value) { $summary += "  [x] $($script:MigDisplay[$kv.Key])`n" }
     }
 
     # sqmSQLTool wird im Abschluss (Standardisierung + Always-On-Aufnahme) gebraucht.
@@ -1639,33 +1626,33 @@ $btnMigrate.Add_Click({
     if ($finalizeRuns) {
         $sqm = Get-SqmSqlToolSource
         if ($sqm) {
-            $summary += "`nAbschluss:   Standardisierung + ggf. Always-On-Aufnahme (sqmSQLTool $($sqm.Version))`n"
+            $summary += "`nFinal step: standardization + Always On join if applicable (sqmSQLTool $($sqm.Version))`n"
         } else {
             $icon = 'Warning'
-            $summary += "`nWARNUNG: sqmSQLTool ist auf diesem Rechner nicht installiert.`n" +
-                        "Der Abschluss faellt auf eine einfache Bereinigung (Orphans + Owner) zurueck;`n" +
-                        "Standardisierung und Always-On-Aufnahme (Add-sqmDatabaseToAG) entfallen.`n"
-            Update-StatusBar "Warnung: sqmSQLTool fehlt - Standardisierung/AG-Aufnahme entfallen" 'Warn'
+            $summary += "`nWARNING: sqmSQLTool is not installed on this machine.`n" +
+                        "The final step falls back to a simple cleanup (orphans + owner);`n" +
+                        "standardization and Always On join (Add-sqmDatabaseToAG) are skipped.`n"
+            Update-StatusBar "Warning: sqmSQLTool missing - standardization/AG join skipped" 'Warn'
         }
     }
 
     $resp = [System.Windows.Forms.MessageBox]::Show(
-        "Migration starten?`n`n$summary",
-        'Bestaetigung','YesNo',$icon)
+        "Start migration?`n`n$summary",
+        'Confirmation','YesNo',$icon)
     if ($resp -ne 'Yes') { return }
 
     $btnMigrate.Enabled = $false
-    $progress.Value = 0; $lblProgress.Text = 'Starte...'
+    $progress.Value = 0; $lblProgress.Text = 'Starting...'
     Set-ActionLabels $scenario
 
     # Backup-/Restore-Fortschritt: verbundener Server, im Direkt-Verfahren zusaetzlich das Ziel
     $script:ProgTargets = @(
-        @{ Label = $(if ($script:ActiveRole -eq 'Source') { 'Quelle' } else { 'Ziel' })
+        @{ Label = $(if ($script:ActiveRole -eq 'Source') { 'Source' } else { 'Target' })
            Server = $script:_ConnSrvName; Auth = $script:_ConnAuthMode; User = $script:_ConnSqlUser
            Pwd = $script:_ConnPwdSS; Trust = $chkTrust.Checked }
     )
     if ($scenario -eq 'Direct' -and $script:OtherServer) {
-        $script:ProgTargets += @{ Label = 'Ziel'; Server = $script:OtherServer; Auth = $script:OtherAuth
+        $script:ProgTargets += @{ Label = 'Target'; Server = $script:OtherServer; Auth = $script:OtherAuth
                                   User = $script:OtherUser; Pwd = $script:OtherPwdSS; Trust = $chkTrust.Checked }
     }
 
@@ -1701,7 +1688,7 @@ $btnMigrate.Add_Click({
                 -SqlLoginsPresent $sqlLoginsPresent `
                 -WithCompression:($cfg.BackupCompression) -CopyOnly:($cfg.CopyOnlyBackup) -WhatIf:$whatif
 
-            Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direkt-Migration: Durchlauf beendet."
+            Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direct migration: run finished."
             return $done
         }
 
@@ -1720,10 +1707,10 @@ $btnMigrate.Add_Click({
                 if ($method -eq 'BackupRestore') {
                     $fallbackCb = [System.Action[string]]{
                         param($msg)
-                        Update-StatusBar "Fallback: Backup lokal - Exchange-Pfad fuer Dienstkonto nicht erreichbar" 'Warn'
+                        Update-StatusBar "Fallback: local backup - exchange path not reachable for the service account" 'Warn'
                         [System.Windows.Forms.MessageBox]::Show(
                             $msg,
-                            'Berechtigungs-Fallback aktiv',
+                            'Permission fallback active',
                             [System.Windows.Forms.MessageBoxButtons]::OK,
                             [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
                     }
@@ -1762,8 +1749,8 @@ $btnMigrate.Add_Click({
                 # Im Direct-Modus brauchen wir den Zielserver -> nicht verfuegbar
                 # hier -> diese Objekte koennen nur migriert werden wenn Ziel verbunden
                 Write-MigrationLog -Level 'WARN' -Category 'MIGRATE' `
-                    -Message "Direct-Modus: Login/Job-Migration erfordert Zielserver-Verbindung" `
-                    -Detail "Bitte Script auf Zielserver ausfuehren fuer vollstaendige Migration"
+                    -Message "Direct mode: login/job migration requires a target server connection" `
+                    -Detail "Please run the script on the target server for a complete migration"
             }
 
             # Logins: SQL-Logins erkennen (-> Ziel braucht Mixed Mode) und als Skript
@@ -1807,7 +1794,7 @@ $btnMigrate.Add_Click({
             }
 
             Write-MigrationLog -Level 'INFO' -Category 'PHASE1' `
-                -Message "Phase 1 abgeschlossen."
+                -Message "Phase 1 completed."
         }
 
         # ================================================================
@@ -1816,7 +1803,7 @@ $btnMigrate.Add_Click({
         elseif ($role -eq 'Target') {
 
             if (-not $loadedState) {
-                throw "Keine Zustandsdatei gefunden. Bitte zuerst Phase 1 auf dem Quellserver ausfuehren."
+                throw "No state file found. Please run phase 1 on the source server first."
             }
 
             $srcDbs    = @($loadedState.Databases)
@@ -1835,10 +1822,10 @@ $btnMigrate.Add_Click({
 
                     $fallbackCb2 = [System.Action[string]]{
                         param($msg)
-                        Update-StatusBar "Fallback: Backup lokal kopiert - Exchange-Pfad fuer Dienstkonto nicht erreichbar" 'Warn'
+                        Update-StatusBar "Fallback: backup copied locally - exchange path not reachable for the service account" 'Warn'
                         [System.Windows.Forms.MessageBox]::Show(
                             $msg,
-                            'Berechtigungs-Fallback aktiv',
+                            'Permission fallback active',
                             [System.Windows.Forms.MessageBoxButtons]::OK,
                             [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
                     }
@@ -1892,7 +1879,7 @@ $btnMigrate.Add_Click({
                     Import-MigrationLogins -TargetServer $srv -ScriptFile $loginScriptFile -WhatIf:$whatif
                 } else {
                     Write-MigrationLog -Level 'WARN' -Category 'LOGIN-IMPORT' `
-                        -Message "Kein Login-Skript in der Zustandsdatei - Login-Import uebersprungen"
+                        -Message "No login script in the state file - login import skipped"
                 }
 
                 # 4. Passwort-Policy abschliessend wieder einschalten
@@ -1927,8 +1914,8 @@ $btnMigrate.Add_Click({
             }
 
             Write-MigrationLog -Level 'INFO' -Category 'PHASE2' `
-                -Message "Phase 2 abgeschlossen. Lokale Backup-Dateien verbleiben in: $lPath" `
-                -Detail "Bitte nach Pruefung manuell bereinigen."
+                -Message "Phase 2 completed. Local backup files remain in: $lPath" `
+                -Detail "Please clean up manually after verification."
         }
 
         return $done
@@ -1944,34 +1931,34 @@ $btnMigrate.Add_Click({
         Stop-OperationProgress
         $btnMigrate.Invoke([Action]{ $btnMigrate.Enabled = $true })
         $progress.Invoke([Action]{ $progress.Value = 100 })
-        $lblProgress.Invoke([Action]{ $lblProgress.Text = 'Abgeschlossen!' })
+        $lblProgress.Invoke([Action]{ $lblProgress.Text = 'Completed!' })
         if ($script:ActiveRole -eq 'Source' -and $script:Scenario -eq 'Direct') {
-            $btnMigrate.Invoke([Action]{ $btnMigrate.Text = '>>  MIGRATION FERTIG  (erneut starten)' })
+            $btnMigrate.Invoke([Action]{ $btnMigrate.Text = '>>  MIGRATION DONE  (start again)' })
         }
 
         $hinweis = if ($script:ActiveRole -eq 'Source' -and $script:Scenario -eq 'TwoPhase') {
-            "`n`nPhase 1 abgeschlossen.`nBitte Script nun auf dem ZIEL-Server ausfuehren."
+            "`n`nPhase 1 completed.`nPlease run the script on the TARGET server now."
         } elseif ($script:ActiveRole -eq 'Source') {
-            "`n`nDirect-Modus: Datenbank-Transfer abgeschlossen."
+            "`n`nDirect mode: database transfer completed."
         } else {
-            "`n`nPhase 2 abgeschlossen. Bitte Zieldatenbanken pruefen."
+            "`n`nPhase 2 completed. Please verify the target databases."
         }
 
         $lPathCurrent = $txtLPath.Text
-        $lokHinweis = "`n`n[!] Lokale Backup-Dateien in '$lPathCurrent' wurden NICHT geloescht.`nBitte nach Pruefung manuell bereinigen."
+        $lokHinweis = "`n`n[!] Local backup files in '$lPathCurrent' were NOT deleted.`nPlease clean up manually after verification."
 
-        Update-StatusBar 'Abgeschlossen. Log pruefen.' 'Success'
+        Update-StatusBar 'Completed. Check the log.' 'Success'
         [System.Windows.Forms.MessageBox]::Show(
-            "Migration abgeschlossen!$hinweis$lokHinweis`n`nLog: $(Get-MigrationLogPath)",
-            'Fertig','OK','Information') | Out-Null
+            "Migration completed!$hinweis$lokHinweis`n`nLog: $(Get-MigrationLogPath)",
+            'Done','OK','Information') | Out-Null
 
     } -OnError {
         param($err)
         Stop-OperationProgress
         $btnMigrate.Invoke([Action]{ $btnMigrate.Enabled = $true })
-        $lblProgress.Invoke([Action]{ $lblProgress.Text = 'FEHLER' })
-        Update-StatusBar "Fehler - Details im Fehler-Dialog" 'Error'
-        Show-ErrorDialog -Title 'Migrationsfehler' -Message $err
+        $lblProgress.Invoke([Action]{ $lblProgress.Text = 'ERROR' })
+        Update-StatusBar "Error - details in the error dialog" 'Error'
+        Show-ErrorDialog -Title 'Migration error' -Message $err
     }
 })
 
@@ -1979,8 +1966,8 @@ $btnMigrate.Add_Click({
 # FORM ANZEIGEN
 # ===========================================================================
 Write-MigrationLog -Level 'INFO' -Category 'GUI' `
-    -Message "GUI gestartet" -Detail "Rolle: $($script:ActiveRole)"
+    -Message "GUI started" -Detail "Role: $($script:ActiveRole)"
 # Tab-Breiten an die finale Fenstergroesse anpassen, sobald das Formular sichtbar ist
 $form.Add_Shown({ & $script:FitTabWidth })
 [System.Windows.Forms.Application]::Run($form)
-Write-MigrationLog -Level 'INFO' -Category 'GUI' -Message 'GUI beendet'
+Write-MigrationLog -Level 'INFO' -Category 'GUI' -Message 'GUI stopped'

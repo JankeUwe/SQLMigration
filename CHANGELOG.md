@@ -21,6 +21,9 @@ All notable changes to this project will be documented in this file.
 - Direct procedure: title and start button no longer say "Phase 1" (now "Migration: Backup + Restore"); the button shows "Migration fertig" after the run
 - Live backup/restore progress in the GUI: percent, database and remaining minutes of running BACKUP/RESTORE statements on source and (Direct) target, polled every ~2 s from sys.dm_exec_requests, shown next to the progress bar
 - Copy progress: while a backup file is copied to the target, the GUI shows "[Kopie] file NN % (x / y GB, MB/s, remaining minutes)"; the percentage comes from robocopy's own output (the destination file size is useless, robocopy preallocates it)
+- Selection simplified: the global "Alle Tabs" bar and the checkboxes/Alle-Keine buttons of all tabs except Datenbanken are gone (those ticks were never evaluated, every object of a type was always migrated); the tabs are now plain views with an object count. Object types are chosen only via the "Migrieren:" row, which gained Alle/Keine buttons
+- All GUI texts are now English (en-US): labels, buttons, tabs, column headers, dialogs, status bar and progress text. The Procedure choices are now Auto / Direct / Detour. The log lines written by the modules (log file, CSV, status bar) are English as well
+- Progress bar ends flush with the right edge of the Migrate row (None button); the [CSV] button is right-aligned there, the progress text sits between [Log] and [CSV]
 
 ## [1.2.0.0] - 2026-06-21
 

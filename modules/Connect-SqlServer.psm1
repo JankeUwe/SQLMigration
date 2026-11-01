@@ -16,7 +16,7 @@ function New-SqlConnection {
         [switch]$TrustServerCertificate
     )
 
-    Write-MigrationLog -Level 'STEP' -Category 'CONNECT' -Message "Verbinde mit $ServerInstance (Auth: $AuthMode)"
+    Write-MigrationLog -Level 'STEP' -Category 'CONNECT' -Message "Connecting to $ServerInstance (auth: $AuthMode)"
 
     try {
         $params = @{
@@ -27,7 +27,7 @@ function New-SqlConnection {
 
         if ($AuthMode -eq 'SqlLogin') {
             if (-not $SqlUser -or -not $SqlPassword) {
-                throw "SQL-Login erfordert SqlUser und SqlPassword"
+                throw "SQL login requires SqlUser and SqlPassword"
             }
             $cred = New-Object System.Management.Automation.PSCredential($SqlUser, $SqlPassword)
             $params['SqlCredential'] = $cred
@@ -38,14 +38,14 @@ function New-SqlConnection {
         $version = $server.VersionString
         $edition = $server.Edition
         Write-MigrationLog -Level 'SUCCESS' -Category 'CONNECT' `
-            -Message "Verbindung hergestellt: $ServerInstance" `
+            -Message "Connection established: $ServerInstance" `
             -Detail "Version: $version | Edition: $edition"
 
         return $server
     }
     catch {
         Write-MigrationLog -Level 'ERROR' -Category 'CONNECT' `
-            -Message "Verbindung fehlgeschlagen: $ServerInstance" `
+            -Message "Connection failed: $ServerInstance" `
             -Detail $_.Exception.Message
         throw
     }
