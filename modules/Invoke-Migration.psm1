@@ -261,8 +261,18 @@ function Invoke-DatabaseMigrationBackupRestore {
                         -BackupDirectory  $localDir `
                         -CompressBackup:$WithCompression.IsPresent `
                         -CopyOnly:$CopyOnly.IsPresent `
+                        -EnableException `
                         -ErrorAction      Stop
-                    $localFile = $bpResult.BackupPath
+                    # Ohne -EnableException wirft Backup-DbaDatabase nicht (z.B. Platte voll) -> Ergebnis pruefen
+                    $localFile = @($bpResult | ForEach-Object { $_.BackupPath } | Where-Object { $_ }) | Select-Object -First 1
+                    if (-not $localFile) { $localFile = @($bpResult | ForEach-Object { $_.FullName } | Where-Object { $_ }) | Select-Object -First 1 }
+                    if (-not $localFile) {
+                        $bpInfo = ($bpResult | ForEach-Object { "BackupComplete=$($_.BackupComplete); Notes=$($_.Notes)" }) -join ' | '
+                        throw "Backup of '$dbName' produced no backup file ($bpInfo). Check free space in '$localDir' on the source server."
+                    }
+                    if (@($bpResult | ForEach-Object { $_.FullName } | Where-Object { $_ }).Count -gt 1) {
+                        throw "Backup of '$dbName' was striped over several files - not supported."
+                    }
                     $stepResult.BackupOK = $true
                     Write-MigrationLog -Level 'SUCCESS' -Category 'BACKUP' `
                         -Message "Local backup OK: $dbName" -Detail $localFile
@@ -323,6 +333,7 @@ function Invoke-DatabaseMigrationBackupRestore {
                         -Path         $localCopy `
                         -DatabaseName $dbName `
                         -WithReplace `
+                        -EnableException `
                         -ErrorAction  Stop
                     $stepResult.RestoreOK = $true
                     Write-MigrationLog -Level 'SUCCESS' -Category 'RESTORE' -Message "Restore OK: $dbName"
@@ -1283,7 +1294,7 @@ function Invoke-DirectDatabaseTransfer {
                 # Restore am Ziel aus dessen LOKALEM Pfad
                 Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Restore on target starting: $dbName" -Detail $tgtLocalFile
                 $null = Restore-DbaDatabase -SqlInstance $TargetServer -Path $tgtLocalFile `
-                    -DatabaseName $dbName -WithReplace -ErrorAction Stop
+                    -DatabaseName $dbName -WithReplace -EnableException -ErrorAction Stop
                 Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Restore (target) OK: $dbName"
             }
         }
