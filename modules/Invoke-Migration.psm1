@@ -1258,8 +1258,18 @@ function Invoke-DirectDatabaseTransfer {
                 Ensure-LocalBackupPath -Path $srcDirAccess
                 Write-MigrationLog -Level 'STEP' -Category 'DIRECT-DB' -Message "Backup on source starting: $dbName" -Detail $srcDir
                 $bp = Backup-DbaDatabase -SqlInstance $SourceServer -Database $dbName `
-                    -BackupDirectory $srcDir -CompressBackup:$WithCompression.IsPresent -CopyOnly:$CopyOnly.IsPresent -ErrorAction Stop
-                $srcFile = $bp.BackupPath
+                    -BackupDirectory $srcDir -CompressBackup:$WithCompression.IsPresent -CopyOnly:$CopyOnly.IsPresent `
+                    -EnableException -ErrorAction Stop
+                # Backup-DbaDatabase wirft ohne -EnableException nicht (z.B. Platte voll) und liefert dann kein BackupPath
+                $srcFile = @($bp | ForEach-Object { $_.BackupPath } | Where-Object { $_ }) | Select-Object -First 1
+                if (-not $srcFile) { $srcFile = @($bp | ForEach-Object { $_.FullName } | Where-Object { $_ }) | Select-Object -First 1 }
+                if (-not $srcFile) {
+                    $bpInfo = ($bp | ForEach-Object { "BackupComplete=$($_.BackupComplete); Notes=$($_.Notes)" }) -join ' | '
+                    throw "Backup of '$dbName' on source produced no backup file ($bpInfo). Check free space in '$srcDir' on the source server."
+                }
+                if (@($bp | ForEach-Object { $_.FullName } | Where-Object { $_ }).Count -gt 1) {
+                    throw "Backup of '$dbName' was striped over several files - not supported by the direct copy."
+                }
                 Write-MigrationLog -Level 'SUCCESS' -Category 'DIRECT-DB' -Message "Backup (source, local) OK: $dbName" -Detail $srcFile
 
                 # robocopy Quelle-lokal -> Ziel-Admin-Freigabe
