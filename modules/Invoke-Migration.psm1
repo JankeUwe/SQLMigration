@@ -916,14 +916,18 @@ function Set-NamedPbmPolicyState {
         [switch]$WhatIf
     )
     $verb = if ($Enabled) { 'enabled' } else { 'disabled' }
+    $enInt = [int]$Enabled
+    $polLit = $PolicyName.Replace("'", "''")
     try {
-        $pol = Get-DbaPbmPolicy -SqlInstance $TargetServer -ErrorAction Stop |
-               Where-Object { $_.Name -eq $PolicyName } | Select-Object -First 1
-        if (-not $pol) {
+        # Reines T-SQL: Get-DbaPbmPolicy liefert je nach Host/dbatools leer -> Policy faelschlich "nicht vorhanden"
+        $row = Invoke-DbaQuery -SqlInstance $TargetServer -EnableException -ErrorAction Stop `
+            -Query "SELECT policy_id, is_enabled FROM msdb.dbo.syspolicy_policies WHERE name = N'$polLit';" |
+            Select-Object -First 1
+        if (-not $row) {
             Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' does not exist - nothing to do"
             return
         }
-        if ($pol.Enabled -eq $Enabled) {
+        if ([int]$row.is_enabled -eq $enInt) {
             Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "Policy '$PolicyName' already $verb"
             return
         }
@@ -931,8 +935,12 @@ function Set-NamedPbmPolicyState {
             Write-MigrationLog -Level 'INFO' -Category 'PBM' -Message "[WHATIF] Policy '$PolicyName' would be $verb"
             return
         }
-        $pol.Enabled = $Enabled
-        $pol.Alter()
+        Invoke-DbaQuery -SqlInstance $TargetServer -EnableException -ErrorAction Stop `
+            -Query "EXEC msdb.dbo.sp_syspolicy_update_policy @policy_id = $([int]$row.policy_id), @is_enabled = $enInt;" | Out-Null
+        $chk = Invoke-DbaQuery -SqlInstance $TargetServer -EnableException -ErrorAction Stop `
+            -Query "SELECT is_enabled FROM msdb.dbo.syspolicy_policies WHERE policy_id = $([int]$row.policy_id);" |
+            Select-Object -First 1
+        if (-not $chk -or [int]$chk.is_enabled -ne $enInt) { throw "Policy '$PolicyName' is not $verb after sp_syspolicy_update_policy" }
         Write-MigrationLog -Level 'SUCCESS' -Category 'PBM' -Message "Policy $verb`: $PolicyName"
     }
     catch {
@@ -1235,7 +1243,7 @@ function Invoke-DirectDatabaseTransfer {
                 try { Set-Content -Path $probe -Value 'x' -ErrorAction Stop; Remove-Item $probe -Force -ErrorAction SilentlyContinue }
                 catch { throw "Target '$tgtUnc' is not writable for the tool user: $($_.Exception.Message)" }
                 $dbInfo   = Get-DbaDatabase -SqlInstance $SourceServer -Database $dbName -ErrorAction Stop
-                $usedBytes = [math]::Max(0, ([double]$dbInfo.Size * 1MB) - ([double]$dbInfo.SpaceAvailable * 1KB))
+                $usedBytes = [math]::Max([double]0, ([double]$dbInfo.Size * 1MB) - ([double]$dbInfo.SpaceAvailable * 1KB))
                 $freeBytes = Get-PathFreeBytes -Path $tgtUnc
                 $usedGb = [math]::Round($usedBytes / 1GB, 1)
                 $freeGb = if ($null -ne $freeBytes) { [math]::Round($freeBytes / 1GB, 1) } else { '?' }
