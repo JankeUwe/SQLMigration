@@ -1578,14 +1578,22 @@ $btnMigrate.Add_Click({
             'Direct' { $scenario = 'Direct' }
             'Detour'  { $scenario = 'TwoPhase' }
             default  {
+                # Auto: nur Direct, wenn das Ziel nicht nur per TCP erreichbar ist, sondern auch die Anmeldung
+                # klappt. Sonst (z.B. Ziel in anderer Domaene / ohne Login) -> Umweg ueber den Exchange-Pfad.
+                $scenario = 'TwoPhase'
                 if ($script:OtherServer -and (Test-ServerReachable -ServerInstance $script:OtherServer -TimeoutMs 3000)) {
-                    $scenario = 'Direct'
-                } else { $scenario = 'TwoPhase' }
+                    $tpAuto = @{ ServerInstance = $script:OtherServer; TrustServerCertificate = $chkTrust.Checked }
+                    if ($cmbOtherAuth.SelectedItem -eq 'SQL-Login') {
+                        $tpAuto['AuthMode'] = 'SqlLogin'; $tpAuto['SqlUser'] = $txtOtherUser.Text.Trim()
+                        $tpAuto['SqlPassword'] = ConvertTo-SecureFromText $txtOtherPwd.Text
+                    }
+                    if (Test-SqlConnection @tpAuto) { $scenario = 'Direct' }
+                }
             }
         }
         if ($scenario -eq 'Direct' -and -not $script:OtherServer) {
             [System.Windows.Forms.MessageBox]::Show(
-                'The Direct procedure needs a target server (counterpart).','Notice','OK','Warning') | Out-Null
+                "The Direct procedure needs a target server (counterpart).`nWithout a connection to the target choose 'Auto' or 'Detour' (exchange path).",'Notice','OK','Warning') | Out-Null
             return
         }
     }
