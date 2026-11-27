@@ -124,8 +124,8 @@ Entscheidung übersteuern; `Auto` wählt anhand der Erreichbarkeit.
        neu aufgebaut – bestehende Verbindungen zum Ziel brechen kurz ab). Die Policy
        **`New_Password_Policy`** wird – falls vorhanden – **deaktiviert**.
      - **Nach** dem Import wird `New_Password_Policy` wieder **aktiviert**.
-   - Verwaiste DB-User werden repariert (`Repair-DbaDbOrphanUser`).
-   - DB-Owner wird auf **sa** gesetzt (per SID `0x01` ermittelt – funktioniert auch bei umbenanntem sa).
+   - Optional und einzeln waehlbar: Kompatibilitaetslevel auf das Servermaximum setzen, verwaiste DB-Benutzer reparieren (`Repair-DbaDbOrphanUser`) und `TARGET_RECOVERY_TIME` auf 60 Sekunden setzen. Alle Optionen sind standardmaessig deaktiviert.
+   - Der DB-Owner bleibt unveraendert; es erfolgt insbesondere keine automatische Zuweisung an **sa**.
    - Verwaiste **AD-Logins** (gelöschte Domänenkonten) werden entfernt – nur wenn der Objekttyp
      *Logins* angehakt ist. Sicherheits­regeln: nur Windows-Logins mit Domänen-SID, **keine**
      System-/sysadmin-Logins, Löschung nur wenn AD den SID **positiv nicht** auflösen kann.
@@ -138,8 +138,8 @@ Entscheidung übersteuern; `Auto` wählt anhand der Erreichbarkeit.
 - [ ] Alle erwarteten Datenbanken vorhanden, Status **ONLINE**.
 - [ ] `DBCC CHECKDB` ohne Fehler.
 - [ ] Recovery-Modell und Kompatibilitätsgrad korrekt.
-- [ ] **Owner** der Datenbanken = **sa** (wird automatisch in Phase 2 gesetzt) – stichprobenartig prüfen.
-- [ ] **Verwaiste Benutzer** repariert (automatisch in Phase 2) – stichprobenartig prüfen.
+- [ ] **Owner** der Datenbanken entspricht weiterhin dem urspruenglichen Owner.
+- [ ] Ausgewaehlte optionale Datenbankaktionen wurden im Log erfolgreich abgeschlossen; nicht ausgewaehlte Einstellungen blieben unveraendert.
 - [ ] **Verwaiste AD-Logins** entfernt (automatisch in Phase 2, wenn *Logins* angehakt) – Log prüfen.
 - [ ] Logins inkl. SIDs vorhanden (per Skript angelegt) – Windows-Logins fremder Domänen ggf. im Log prüfen.
 - [ ] Bei SQL-Logins: Ziel steht auf **Mixed Mode** (wurde bei Bedarf automatisch umgestellt + Dienst neu gestartet).

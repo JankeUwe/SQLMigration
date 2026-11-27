@@ -17,7 +17,7 @@ PowerShell WinForms-Tool zur zweiphasigen SQL Server Datenbankmigrationen — en
 - **Migrationsmethoden**: **Backup / Restore** (Standard, DB bleibt online) oder **Detach / Attach** (optional *Re-Attach* auf der Quelle).
 - **Migrierbare Objekte**: Datenbanken, **Logins**, DB-User, **Linked Server**, **Agent Jobs**, **Credentials**, **Proxies** — in **beiden** Verfahren (Direct via `Copy-Dba*`, TwoPhase via Skript-Export/-Import).
 - **Domänenübergreifend**: Logins via `Export-DbaLogin` → `Invoke-DbaQuery` (inkl. SID + Passwort-Hash); Jobs/LS/Cred/Proxy via `Export-Dba*` / `Export-DbaScript`. **Secrets-TODO**: nicht entschlüsselbare Credential-/Linked-Server-Passwörter werden zum manuellen Nachtragen aufgelistet.
-- **Automatische Nachbearbeitung am Ziel**: verwaiste DB-User reparieren, DB-Owner → `sa` (per SID `0x01`), verwaiste **AD-Logins** entfernen, bei SQL-Logins **Mixed Mode** aktivieren (+ SQL-Dienst-Neustart) und Policy `New_Password_Policy` aus/ein.
+- **Optionale Datenbankaktionen (jeweils einzeln waehlbar)**: Kompatibilitaetslevel anheben, verwaiste DB-Benutzer reparieren und `TARGET_RECOVERY_TIME` auf 60 Sekunden setzen. Der Datenbank-Owner bleibt unveraendert. Zusaetzlich werden verwaiste **AD-Logins** entfernt, bei SQL-Logins **Mixed Mode** aktivieren (+ SQL-Dienst-Neustart) und Policy `New_Password_Policy` aus/ein.
 - **WhatIf-Modus**: vollständige Simulation ohne tatsächliche Änderungen.
 - **State Management**: JSON-basierte Zustandsdatei für getrennte Netzwerke.
 - **Strukturiertes Logging**: alle Schritte protokolliert (Log + CSV in der GUI).
@@ -84,3 +84,10 @@ Die `migration.config.json` steuert:
 - **PowerShell Gallery:** [powershellgallery.com/profiles/JankeUwe](https://www.powershellgallery.com/profiles/JankeUwe)
 - **Alle Projekte:** [github.com/JankeUwe](https://github.com/JankeUwe)
 - Entwickler: Uwe Janke, Senior SQL Server DBA | dtcSoftware
+
+
+### Datenbank-Standardisierung (Direct)
+
+Die optionale Datenbank-Standardisierung ueber `sqmSQLTool` ist bei Direct-Migration standardmaessig deaktiviert. Ohne aktivierte Checkbox bleibt insbesondere das bisherige Compatibility Level der migrierten Datenbanken erhalten. Wenn die Checkbox vor dem Start aktiviert wird, laeuft die vollstaendige `Invoke-sqmDatabaseStandardization`-Funktion; diese hebt unter anderem das Compatibility Level auf das Serverniveau an.
+
+Bei `Auto` wird die Checkbox ebenfalls angeboten, aber nur angewendet, wenn die automatische Erkennung tatsaechlich `Direct` ergibt. Bei `Detour` / TwoPhase wird in Phase 1 kein Zielserver benoetigt; Phase 2 verwendet ausschliesslich die dort aufgebaute Zielserververbindung. Die Standardisierung bleibt auch in Phase 2 deaktiviert.

@@ -1,3 +1,8 @@
+## Unreleased
+- Direct-Migration: Datenbank-Standardisierung ueber sqmSQLTool bleibt standardmaessig deaktiviert; bei aktiviertem Opt-in wird die Compatibility-Level-Anhebung bewusst mit ausgefuehrt.
+- Auto-Modus: Opt-in-Checkbox fuer die Standardisierung wird ebenfalls angezeigt und greift nur, wenn Auto tatsaechlich Direct waehlt.
+- TwoPhase/Detour: Phase 1 uebergibt keinen unnoetigen TargetServer an Backup-/Detach-Funktionen und schreibt TargetServer nur dann in den State, wenn ein Wert vorhanden ist. Phase 2 verwendet die verbundene Zielinstanz und laesst Standardisierung explizit deaktiviert.
+
 # SQLMigration Changelog
 
 All notable changes to this project will be documented in this file.
@@ -162,3 +167,9 @@ All notable changes to this project will be documented in this file.
 - Dates follow ISO 8601 (YYYY-MM-DD)
 - Version numbers follow [Semantic Versioning](https://semver.org/)
 - Commit references shown in parentheses for traceability
+
+## 2026-11-23 – Owner-Erhalt und einzeln waehlbare Datenbankaktionen
+- Automatische Aenderung des Datenbank-Owners auf `sa` entfernt; Owner bleibt wie nach Restore/Attach erhalten.
+- Datenbankaktionen einzeln waehlbar: Kompatibilitaetslevel, Reparatur verwaister DB-Benutzer und TARGET_RECOVERY_TIME (60 Sekunden).
+- Auswahl wird in der JSON-State-Datei gespeichert und in Phase 2 wieder angewendet.
+- Keine pauschale `Invoke-sqmDatabaseStandardization`-Ausfuehrung mehr.

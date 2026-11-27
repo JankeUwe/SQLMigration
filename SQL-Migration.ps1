@@ -66,8 +66,8 @@ Import-Module dbaTools -ErrorAction Stop
 # Konfiguration laden
 # ---------------------------------------------------------------------------
 $Config = @{
-    DefaultExchangePath     = "\\exchange-server\SQLMigration\Backups"
-    DefaultLocalBackupPath  = "F:\Daten\SQL\Backup"
+    DefaultExchangePath     = "\\SRVDB05\e$\Migration"
+    DefaultLocalBackupPath  = "D:\Backup"
     DefaultLogPath          = "C:\SQLMigration\Logs"
     LogFilePrefix           = 'SQL-Migration'
     ConnectionTimeout       = 30
@@ -720,7 +720,7 @@ $pnlHead.Controls.Add($lblConnState)
 # --- Verbindungs-Panel ---
 $pnlConn            = New-Object System.Windows.Forms.Panel
 $pnlConn.Dock       = 'Top'
-$pnlConn.Height     = 102
+$pnlConn.Height     = 158
 $pnlConn.BackColor  = $clrPanel
 $pnlConn.Padding    = New-Object System.Windows.Forms.Padding(8,6,8,6)
 $pnlMain.Controls.Add($pnlConn)
@@ -880,6 +880,34 @@ $cmbVerfahren.Location = New-Object System.Drawing.Point(545, 70)
 $cmbVerfahren.Items.AddRange(@('Auto','Direct','Detour')) | Out-Null
 $cmbVerfahren.SelectedIndex = 0
 $pnlConn.Controls.Add($cmbVerfahren)
+
+# Optionale, einzeln waehlbare Datenbankaktionen (alle standardmaessig AUS).
+$chkStandardize = New-Object System.Windows.Forms.Label
+$chkStandardize.Text = 'Datenbankaktionen (optional):'
+$chkStandardize.Font = $fntSmall; $chkStandardize.ForeColor = $clrText
+$chkStandardize.AutoSize = $true
+$chkStandardize.Enabled = $false; $chkStandardize.Visible = $false
+$chkStandardize.Location = New-Object System.Drawing.Point(650, 70)
+$pnlConn.Controls.Add($chkStandardize)
+$chkCompat = New-Object System.Windows.Forms.CheckBox
+$chkCompat.Text = 'Kompatibilitaetslevel auf Servermaximum setzen'
+$chkCompat.Font = $fntSmall; $chkCompat.ForeColor = $clrText; $chkCompat.AutoSize = $true
+$chkCompat.Location = New-Object System.Drawing.Point(650, 92); $pnlConn.Controls.Add($chkCompat)
+$chkOrphans = New-Object System.Windows.Forms.CheckBox
+$chkOrphans.Text = 'Verwaiste Datenbankbenutzer reparieren'
+$chkOrphans.Font = $fntSmall; $chkOrphans.ForeColor = $clrText; $chkOrphans.AutoSize = $true
+$chkOrphans.Location = New-Object System.Drawing.Point(650, 114); $pnlConn.Controls.Add($chkOrphans)
+$chkRecovery = New-Object System.Windows.Forms.CheckBox
+$chkRecovery.Text = 'TARGET_RECOVERY_TIME auf 60 Sekunden setzen'
+$chkRecovery.Font = $fntSmall; $chkRecovery.ForeColor = $clrText; $chkRecovery.AutoSize = $true
+$chkRecovery.Location = New-Object System.Drawing.Point(650, 136); $pnlConn.Controls.Add($chkRecovery)
+$updateStandardizeVisibility = {
+    $isDirectOrAuto = ($script:ActiveRole -eq 'Source')
+    foreach ($c in @($chkStandardize,$chkCompat,$chkOrphans,$chkRecovery)) { $c.Visible = $isDirectOrAuto; $c.Enabled = $isDirectOrAuto }
+    if (-not $isDirectOrAuto) { $chkCompat.Checked = $false; $chkOrphans.Checked = $false; $chkRecovery.Checked = $false }
+}
+$cmbVerfahren.Add_SelectedIndexChanged($updateStandardizeVisibility)
+& $updateStandardizeVisibility
 
 # Status der Gegenstelle (Ergebnis von "Verbinden" in der Gegenstellen-Zeile)
 $lblScenario = New-Object System.Windows.Forms.Label
@@ -1176,6 +1204,30 @@ $btnConnect.Add_Click({
         Update-StatusBar "Connected to $($script:_ConnSrvName). Loading objects..." 'Info'
 
         $dbs    = Get-SqlDatabases    -Server $conn -ExcludeSystem
+
+        # Im Target-Modus ist die Datenbankliste aus Phase 1 massgeblich.
+        # Die Zielinstanz kann zu diesem Zeitpunkt noch leer sein; deshalb
+        # darf die GUI-Liste nicht ausschliesslich vom Zielserver kommen.
+        if ($script:ActiveRole -eq 'Target' -and $script:LoadedState -and $script:LoadedState.Databases) {
+            $phase1DbNames = @($script:LoadedState.Databases | ForEach-Object {
+                if ($_ -is [string]) { $_ }
+                elseif ($null -ne $_.Name) { [string]$_.Name }
+                else { [string]$_ }
+            } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+
+            $dbs = @($phase1DbNames | ForEach-Object {
+                [pscustomobject]@{
+                    Name          = $_
+                    Status        = 'From Phase 1'
+                    RecoveryModel = ''
+                    SizeGB        = ''
+                    Compatibility = ''
+                    Owner         = ''
+                }
+            })
+            Update-StatusBar "Loaded $($dbs.Count) source databases from Phase 1 state file." 'Success'
+        }
+
         $logins = Get-SqlLogins       -Server $conn
         $users  = Get-SqlDbUsers      -Server $conn
         $ls     = Get-SqlLinkedServers -Server $conn
@@ -1578,22 +1630,14 @@ $btnMigrate.Add_Click({
             'Direct' { $scenario = 'Direct' }
             'Detour'  { $scenario = 'TwoPhase' }
             default  {
-                # Auto: nur Direct, wenn das Ziel nicht nur per TCP erreichbar ist, sondern auch die Anmeldung
-                # klappt. Sonst (z.B. Ziel in anderer Domaene / ohne Login) -> Umweg ueber den Exchange-Pfad.
-                $scenario = 'TwoPhase'
                 if ($script:OtherServer -and (Test-ServerReachable -ServerInstance $script:OtherServer -TimeoutMs 3000)) {
-                    $tpAuto = @{ ServerInstance = $script:OtherServer; TrustServerCertificate = $chkTrust.Checked }
-                    if ($cmbOtherAuth.SelectedItem -eq 'SQL-Login') {
-                        $tpAuto['AuthMode'] = 'SqlLogin'; $tpAuto['SqlUser'] = $txtOtherUser.Text.Trim()
-                        $tpAuto['SqlPassword'] = ConvertTo-SecureFromText $txtOtherPwd.Text
-                    }
-                    if (Test-SqlConnection @tpAuto) { $scenario = 'Direct' }
-                }
+                    $scenario = 'Direct'
+                } else { $scenario = 'TwoPhase' }
             }
         }
         if ($scenario -eq 'Direct' -and -not $script:OtherServer) {
             [System.Windows.Forms.MessageBox]::Show(
-                "The Direct procedure needs a target server (counterpart).`nWithout a connection to the target choose 'Auto' or 'Detour' (exchange path).",'Notice','OK','Warning') | Out-Null
+                'The Direct procedure needs a target server (counterpart).','Notice','OK','Warning') | Out-Null
             return
         }
     }
@@ -1602,7 +1646,8 @@ $btnMigrate.Add_Click({
     $script:OtherAuth    = $cmbOtherAuth.SelectedItem
     $script:OtherUser    = $txtOtherUser.Text.Trim()
     $script:OtherPwdSS   = ConvertTo-SecureFromText $txtOtherPwd.Text
-
+    $standardizeOptions = @{ SetCompatibilityLevel = [bool]($script:ActiveRole -eq 'Source' -and $chkCompat.Checked); RepairOrphanUsers = [bool]($script:ActiveRole -eq 'Source' -and $chkOrphans.Checked); SetTargetRecoveryTime = [bool]($script:ActiveRole -eq 'Source' -and $chkRecovery.Checked) }
+    
     # Zusammenfassung
     $phaseInfo = if ($script:ActiveRole -eq 'Source') {
         if ($scenario -eq 'Direct') {
@@ -1617,6 +1662,7 @@ $btnMigrate.Add_Click({
     $summary  = $phaseInfo
     $summary += "Method:      $method`n"
     $summary += "WhatIf:      $whatif`n"
+    $summary += "Standardization options: Compatibility=$($standardizeOptions.SetCompatibilityLevel); OrphanUsers=$($standardizeOptions.RepairOrphanUsers); RecoveryTime=$($standardizeOptions.SetTargetRecoveryTime); Owner=UNCHANGED`n"
     $summary += "Exchange:    $exPath`n"
     $summary += "Local:       $lPath`n"
     if ($selDbs.Count -gt 0) {
@@ -1672,7 +1718,7 @@ $btnMigrate.Add_Click({
     Invoke-BackgroundJob -ScriptBlock {
         param($srv, $role, $dbs, $exPath, $lPath, $method, $detach,
               $reatt, $whatif, $chks, $scenario, $loadedState, $cfg,
-              $otherSrv, $otherTrust, $otherAuth, $otherUser, $otherPwd)
+              $otherSrv, $otherTrust, $otherAuth, $otherUser, $otherPwd, $standardizeOptions)
 
         $done = 0
 
@@ -1693,7 +1739,8 @@ $btnMigrate.Add_Click({
 
             Invoke-DirectMigration -SourceServer $srv -TargetServer $tgtConn -Databases $dbs `
                 -Objects $chks -ExchangePath $exPath -LocalBackupPath $lPath -Method $method `
-                -SqlLoginsPresent $sqlLoginsPresent `
+                -SqlLoginsPresent $sqlLoginsPresent -SetCompatibilityLevel:$standardizeOptions.SetCompatibilityLevel `
+                -RepairOrphanUsers:$standardizeOptions.RepairOrphanUsers -SetTargetRecoveryTime:$standardizeOptions.SetTargetRecoveryTime `
                 -WithCompression:($cfg.BackupCompression) -CopyOnly:($cfg.CopyOnlyBackup) -WhatIf:$whatif
 
             Write-MigrationLog -Level 'INFO' -Category 'DIRECT' -Message "Direct migration: run finished."
@@ -1724,7 +1771,6 @@ $btnMigrate.Add_Click({
                     }
                     $res = Invoke-DatabaseMigrationBackupRestore `
                         -SourceServer      $srv `
-                        -TargetServer      $srv `
                         -Databases         $dbs `
                         -ExchangePath      $exPath `
                         -LocalBackupPath   $lPath `
@@ -1740,7 +1786,6 @@ $btnMigrate.Add_Click({
                 elseif ($method -eq 'DetachAttach') {
                     $res = Invoke-DatabaseMigrationDetachAttach `
                         -SourceServer      $srv `
-                        -TargetServer      $srv `
                         -Databases         $dbs `
                         -ExchangePath      $exPath `
                         -ReattachOnSource:$reatt `
@@ -1782,23 +1827,36 @@ $btnMigrate.Add_Click({
 
             # Zustandsdatei schreiben (auch im Direct-Modus als Protokoll)
             if (-not $whatif) {
-                $tgtSrv = if ($loadedState) { $loadedState.TargetServer } else { '' }
-                Write-MigrationState `
-                    -ExchangePath      $exPath `
-                    -StateFileName     $cfg.StateFileName `
-                    -SourceServer      $srv.Name `
-                    -TargetServer      $tgtSrv `
-                    -Method            $method `
-                    -Databases         $dbs `
-                    -MigrationObjects  $chks `
-                    -BackupFiles       $backupFiles `
-                    -DbFileMap         $dbFileMap `
-                    -ReattachOnSource  $reatt `
-                    -WhatIf            $whatif `
-                    -LocalBackupPath   $lPath `
-                    -SqlLoginsPresent  $sqlLoginsPresent `
-                    -LoginScriptFile   $loginScriptFile `
-                    -ObjectScripts     $objectScripts | Out-Null
+                # Phase 1 darf keine Zielserver-Angabe benoetigen. TargetServer nur
+                # dann in den State schreiben, wenn tatsaechlich ein Wert vorliegt.
+                $tgtSrv = $null
+                if ($scenario -eq 'Direct' -and $otherSrv) {
+                    $tgtSrv = [string]$otherSrv
+                } elseif ($loadedState -and $loadedState.TargetServer) {
+                    $tgtSrv = [string]$loadedState.TargetServer
+                }
+
+                $stateParams = @{
+                    ExchangePath      = $exPath
+                    StateFileName     = $cfg.StateFileName
+                    SourceServer      = $srv.Name
+                    Method            = $method
+                    Databases         = $dbs
+                    MigrationObjects  = $chks
+                    BackupFiles       = $backupFiles
+                    DbFileMap         = $dbFileMap
+                    ReattachOnSource  = $reatt
+                    WhatIf            = $whatif
+                    LocalBackupPath   = $lPath
+                    SqlLoginsPresent  = $sqlLoginsPresent
+                    LoginScriptFile   = $loginScriptFile
+                    ObjectScripts     = $objectScripts
+                    StandardizationOptions = $standardizeOptions
+                }
+                if (-not [string]::IsNullOrWhiteSpace($tgtSrv)) {
+                    $stateParams['TargetServer'] = $tgtSrv
+                }
+                Write-MigrationState @stateParams | Out-Null
             }
 
             Write-MigrationLog -Level 'INFO' -Category 'PHASE1' `
@@ -1910,9 +1968,16 @@ $btnMigrate.Add_Click({
                 if ($chks['Agent Jobs']    -and $objScripts.Jobs)          { Import-MigrationScriptFile -TargetServer $srv -ScriptFile $objScripts.Jobs          -Category 'JOB-IMPORT'   -WhatIf:$whatif }
             }
 
-            # Abschluss: Standardisierung + ggf. Always-On-Aufnahme (nach Logins/Objekten)
+            # Phase 2: Ausgewaehlte Aktionen aus der Zustandsdatei anwenden; Owner bleibt unveraendert.
             if ($chks['Datenbanken'] -and $srcDbs.Count -gt 0) {
-                Invoke-MigrationFinalize -TargetServer $srv -Databases $srcDbs -WhatIf:$whatif
+                $phase2Options = @{}
+                if ($loadedState.StandardizationOptions) {
+                    $phase2Options = $loadedState.StandardizationOptions
+                }
+                Invoke-MigrationFinalize -TargetServer $srv -Databases $srcDbs `
+                    -SetCompatibilityLevel:([bool]$phase2Options.SetCompatibilityLevel) `
+                    -RepairOrphanUsers:([bool]$phase2Options.RepairOrphanUsers) `
+                    -SetTargetRecoveryTime:([bool]$phase2Options.SetTargetRecoveryTime) -WhatIf:$whatif
             }
 
             # Phase2 in Zustandsdatei vermerken
@@ -1933,7 +1998,7 @@ $btnMigrate.Add_Click({
         ($cmbMethod.SelectedIndex -eq 1), $reattach, $whatif, $migChks,
         $script:Scenario, $loadedState, $cfgRef,
         $script:OtherServer, $script:_DirectTrust,
-        $script:OtherAuth, $script:OtherUser, $script:OtherPwdSS
+        $script:OtherAuth, $script:OtherUser, $script:OtherPwdSS, $standardizeOptions
     ) -OnComplete {
         param($r)
         Stop-OperationProgress
